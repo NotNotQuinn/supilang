@@ -73,15 +73,15 @@ func (l *lexer) Lex(str string) []Token {
 // Create a string, consuming characters as needed.
 func (l *lexer) make_string() Token {
 	l.advance()
-	ident := ""
+	content := ""
 	last := byte('"')
 	for l.curchar != 0 && (l.curchar != '"' || last == '\\') {
-		ident += string(l.curchar)
+		content += string(l.curchar)
 		last = l.curchar
 		l.advance()
 	}
 	l.advance()
-	return Token{TT_STRING, ident}
+	return Token{TT_STRING, content}
 }
 
 // Time to document so I dont forget everything tomorrow, actually so I dont have to remember everything for tomorrow.
