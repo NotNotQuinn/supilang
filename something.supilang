@@ -1,0 +1,6 @@
+alias IDENT
+	exec "ping"
+	exec "remind me in 40s"
+	pipe "asd" 
+	   | "PogBones"
+end
