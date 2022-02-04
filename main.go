@@ -78,11 +78,7 @@ func main() {
 	if err != nil {
 		log.Fatal(err)
 	}
-	fmt.Println(result)
 
-	// p := Program{[]Operation{
-	// 	{OP_EXEC, "ping"},
-	// 	{OP_PIPE, []string{"ping", "remindme in 30s"}},
-	// }}
-	// fmt.Println(p.Compile())
+	p := Program{result.GetOperations()}
+	fmt.Println(p.Compile())
 }
