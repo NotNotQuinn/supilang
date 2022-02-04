@@ -22,7 +22,7 @@ func NewParser(s string) parser {
 	}
 }
 
-func (p *parser) Parse() (TreeNode, error) {
+func (p *parser) Parse() (OperationalNode, error) {
 	p.scanToken()
 	return p.parseAlias()
 }
@@ -73,11 +73,9 @@ func (p *parser) parseIdent() (string, error) {
 	return p.curTok.Value, nil
 }
 func (p *parser) parseAliasBody() (*AliasBodyNode, error) {
-	statements := []*StatementNode{}
+	statements := []OperationalNode{}
 	if p.curTok.Type == TT_NEWLINE {
 		p.scanToken()
-	} else {
-		return nil, fmt.Errorf("expected statement, found '%v'", p.curTok)
 	}
 	statement, err := p.parseStatement()
 	if err != nil {
@@ -85,11 +83,10 @@ func (p *parser) parseAliasBody() (*AliasBodyNode, error) {
 	}
 	statements = append(statements, statement)
 	for {
-		if p.curTok.Type == TT_NEWLINE {
-			p.scanToken()
-		} else {
+		if p.curTok.Type != TT_NEWLINE {
 			break
 		}
+		p.scanToken()
 		statement, err := p.parseStatement()
 		if err != nil {
 			return nil, err
@@ -113,7 +110,7 @@ func (p *parser) parseStatement() (*StatementNode, error) {
 		}
 		return &StatementNode{
 			Command:             keyword,
-			CommandSpecificPart: value,
+			CommandSpecificPart: &ExecNode{value},
 		}, nil
 	case "pipe":
 		pipelist, err := p.parsePipeList()
@@ -132,7 +129,7 @@ func (p *parser) parseString() (string, error) {
 		return "", fmt.Errorf("expected string literal, found '%v'", p.curTok)
 	}
 	// the only supported escapes are quotes
-	value := strings.Replace(p.curTok.Value, `\"`, `"`, -1)
+	value := strings.Replace(p.curTok.Value, "\\\"", "\"", -1)
 	p.scanToken()
 	return value, nil
 }
@@ -177,22 +174,45 @@ func (p *parser) parsePipeList() (*PipeListNode, error) {
 type (
 	AliasNode struct {
 		Identifier string
-		Body       *AliasBodyNode
+		Body       OperationalNode
 	}
 	AliasBodyNode struct {
-		Statements []*StatementNode
+		Statements []OperationalNode
 	}
 	StatementNode struct {
 		Command             string
-		CommandSpecificPart interface{}
+		CommandSpecificPart OperationalNode
+	}
+	ExecNode struct {
+		String string
 	}
 	PipeListNode struct {
 		Strings []string
 	}
 )
 
-func (a *AliasNode) Traverse() {}
+func (an *AliasNode) GetOperations() []Operation {
+	return an.Body.GetOperations()
+}
+func (abn *AliasBodyNode) GetOperations() []Operation {
+	ops := []Operation{}
+	for _, on := range abn.Statements {
+		ops = append(ops, on.GetOperations()...)
+	}
+	return ops
+}
+func (sn *StatementNode) GetOperations() []Operation {
+	// s.Command should be an intermediate representation
+	// or be meaningless
+	return sn.CommandSpecificPart.GetOperations()
+}
+func (en *ExecNode) GetOperations() []Operation {
+	return []Operation{{OP_EXEC, en.String}}
+}
+func (pln *PipeListNode) GetOperations() []Operation {
+	return []Operation{{OP_PIPE, pln.Strings}}
+}
 
-type TreeNode interface {
-	Traverse()
+type OperationalNode interface {
+	GetOperations() []Operation
 }
