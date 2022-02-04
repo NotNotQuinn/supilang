@@ -17,6 +17,7 @@ const (
 	TT_KEYWORD
 	TT_WORD
 	TT_STRING
+	TT_NEWLINE
 )
 
 var KEYWORDS []string = []string{
@@ -56,8 +57,11 @@ func (l *lexer) Lex(str string) []Token {
 	for l.curchar != 0 {
 		if (l.curchar < ' ' || l.curchar >= 0x7F) && l.curchar != '\t' && l.curchar != '\r' && l.curchar != '\n' {
 			log.Fatal("Invalid text in your file god daawm: ", l.curchar)
-		} else if l.curchar == ' ' || l.curchar == '\t' || l.curchar == '\r' || l.curchar == '\n' {
+		} else if l.curchar == ' ' || l.curchar == '\t' || l.curchar == '\r' {
 			l.advance()
+		} else if l.curchar == '\n' {
+			l.advance()
+			l.tokens = append(l.tokens, Token{TT_NEWLINE, ""})
 		} else if l.curchar == '"' {
 			l.tokens = append(l.tokens, l.make_string())
 		} else {
