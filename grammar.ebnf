@@ -1,0 +1,11 @@
+Alias := "alias" Ident AliasBody "end"
+Ident := Word
+AliasBody := [ NewLine ] Statement { NewLine Statement }
+Statement := "exec" String
+			| "pipe" PipeList
+PipeList := String { "|" String }+
+NewLine := "\n"
+
+# These are less well defined, as they are parsed in the lexer
+Word := { char }+
+String := '"' { char } '"'
