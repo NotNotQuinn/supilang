@@ -73,6 +73,12 @@ func main() {
 	lexer := NewLexer()
 	tokens := lexer.Lex(string(bytes))
 	fmt.Println(tokens)
+	parser := NewParser(string(bytes))
+	result, err := parser.Parse()
+	if err != nil {
+		log.Fatal(err)
+	}
+	fmt.Println(result)
 
 	// p := Program{[]Operation{
 	// 	{OP_EXEC, "ping"},
