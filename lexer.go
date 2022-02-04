@@ -1,6 +1,7 @@
 package main
 
 import (
+	"fmt"
 	"log"
 )
 
@@ -11,6 +12,25 @@ type (
 		Value string
 	}
 )
+
+func (t Token) String() string {
+	s := "{"
+	switch t.Type {
+	case TT_INVALID:
+		s += "TT_INVALID"
+	case TT_KEYWORD:
+		s += "Keyword"
+	case TT_WORD:
+		s += "Word"
+	case TT_STRING:
+		s += "String"
+	case TT_NEWLINE:
+		s += "\\n"
+	default:
+		s += "UNKNOWN"
+	}
+	return s + "(" + fmt.Sprint(t.Type) + ") " + t.Value + "}"
+}
 
 const (
 	TT_INVALID TokenType = iota
