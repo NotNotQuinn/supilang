@@ -10,28 +10,29 @@ type SupilangFile struct {
 }
 
 type Alias struct {
-	Name      string    `  "alias" @Ident`
-	Keyprefix *string   `[ "prefixed" @String ]`
-	Body      AliasBody `  @@ "end"`
+	Name      string     `  "alias" @Ident`
+	Keyprefix *string    `[ "prefixed" @String ]`
+	Body      *AliasBody `  @@ "end"`
 }
 type AliasBody struct {
 	Actions []*AliasAction `@@*`
 }
 
 type AliasAction struct {
-	ExecuteAction *ExecuteAction `@@`
+	ExecuteAction     *ExecuteAction     `( @@`
+	GetCompiledAction *GetCompiledAction `| @@`
+	ContinueAction    *ContinuedAction   `)[ "->" @@ ]`
 }
 
 // Execute a command, storing the output for later use
 type ExecuteAction struct {
-	RetrieveKey    *string              `[ "get" @String  "->" ]`
+	RetrieveKey    *string              `[ "get" @String "->" ]`
 	SimpleAction   *ExecuteActionSimple `  @@`
 	ContinueAction *ContinuedAction     `[ "->" @@ ]`
 }
-
 type ContinuedAction struct {
-	StoreKey   *string        ` "set" @String`
-	NextAction *ExecuteAction `| @@`
+	StoreKey   *string        `  "set" @String`
+	NextAction *ExecuteAction `|  @@`
 }
 
 // Execute a command, voiding the output
@@ -40,6 +41,9 @@ type ExecuteActionSimple struct {
 	JSExec              *string          `  "js" @JSExecString`
 	PipeCommandLiterals []string         `|  ("exec" | "pipe") @String { "|" @String } `
 	CallAlias           *CallAliasAction `|  @@`
+}
+type GetCompiledAction struct {
+	CompilationRoot *AliasBody `"get" "compiled" @@ "end"`
 }
 type CallAliasAction struct {
 	User      *string `"call" [ @User ]`

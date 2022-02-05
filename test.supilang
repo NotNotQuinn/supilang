@@ -1,7 +1,5 @@
-alias alias
-	js ```
-
-	args.join(" ")
-
-	```
+alias IDENTIFIER
+	get compiled
+		js ```1```
+	end -> exec "pipe"
 end

@@ -13,6 +13,7 @@ import (
 	"github.com/alecthomas/participle/v2"
 	"github.com/alecthomas/participle/v2/lexer"
 	"github.com/alecthomas/repr"
+	"github.com/google/uuid"
 	"github.com/tdewolff/minify"
 	"github.com/tdewolff/minify/js"
 )
@@ -23,47 +24,10 @@ func init() {
 	m.AddFuncRegexp(regexp.MustCompile("^(application|text)/(x-)?(java|ecma)script$"), js.Minify)
 }
 
-// type OpType uint64
-
-// const (
-// 	// execute a supibot command
-// 	OP_EXEC OpType = iota
-// 	// Pipe multiple commands together
-// 	OP_PIPE
-
-// 	// Store the next command execution into the key provided
-// 	OP_STORE
-// 	// Retrive the key and pipe it into the next command
-// 	OP_RETRIEVE
-
-// 	// // push string to a stack
-// 	// OP_STACK_PUSH
-// 	// // pop from a stack
-// 	// OP_STACK_POP
-// 	// // delete a stack
-// 	// OP_STACK_DELETE
-
-// 	// // Get a key from customData
-// 	// OP_CUSTOM_DATA_GET
-// 	// // Set a key to customData
-// 	// OP_CUSTOM_DATA_SET
-// 	// // Get all keys from customData
-// 	// OP_CUSTOM_DATA_GET_KEYS
-// )
-
-// type (
-// 	Operation struct {
-// 		Type  OpType
-// 		Value interface{}
-// 	}
-
-// 	Program struct {
-// 		Ops []Operation
-// 	}
-// )
-
 type AliasOptions struct {
-	Keyprefix string
+	Keyprefix                 string
+	RandomizePipeChar         bool
+	AliasBodyForcePipeCommand bool
 }
 
 func (a *Alias) Getoptions() *AliasOptions {
@@ -92,24 +56,72 @@ func (ab *AliasBody) Compile(a *AliasOptions) (string, error) {
 			return "", fmt.Errorf("AliasBody: %w", err)
 		}
 		commands = append(commands, cmds...)
-		if i+1 != len(ab.Actions) {
+		if i+1 != len(ab.Actions) && len(cmds) > 0 {
 			commands = append(commands, "abb say", "null")
 		}
 	}
+
 	if len(commands) == 0 {
 		return "", errors.New("an alias must have at least one action")
+	}
+	if a.AliasBodyForcePipeCommand && len(commands) == 1 {
+		commands = append([]string{"null"}, commands...)
 	} else if len(commands) == 1 {
 		return commands[0], nil
 	}
-	return "pipe " + strings.Join(commands, " | "), nil
+	pipeChar := "|"
+	if a.RandomizePipeChar {
+		id, err := uuid.NewRandom()
+		if err != nil {
+			log.Fatal("could not generate uuid: ", err)
+		}
+		pipeChar = id.String()[:8]
+	}
+	return "pipe _char:" + pipeChar + " " + strings.Join(commands, " "+pipeChar+" "), nil
 }
 func (aa *AliasAction) Compile(a *AliasOptions) ([]string, error) {
+	out := []string{}
 	if aa.ExecuteAction != nil {
-		return aa.ExecuteAction.Compile(a)
+		cmds, err := aa.ExecuteAction.Compile(a)
+		if err != nil {
+			return nil, fmt.Errorf("AliasAction: %w", err)
+		}
+		out = append(out, cmds...)
+	} else if aa.GetCompiledAction != nil {
+		cmds, err := aa.GetCompiledAction.Compile(a)
+		if err != nil {
+			return nil, fmt.Errorf("AliasAction: %w", err)
+		}
+		out = append(out, cmds...)
 	}
-	return nil, nil
+	if aa.ContinueAction != nil {
+		cmds, err := aa.ContinueAction.Compile(a)
+		if err != nil {
+			return nil, fmt.Errorf("AliasAction: %w", err)
+		}
+		out = append(out, cmds...)
+	}
+	return out, nil
 }
-
+func (ca *GetCompiledAction) Compile(a *AliasOptions) ([]string, error) {
+	execString, err := ca.CompilationRoot.Compile(&AliasOptions{
+		Keyprefix:                 a.Keyprefix,
+		RandomizePipeChar:         true,
+		AliasBodyForcePipeCommand: true,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("GetCompiledAction: %w", err)
+	}
+	// escape two sets of quotes, one for function param, one for javascript string literal
+	// and remove "pipe " from the string
+	escapedString := strings.Replace(execString[5:], `"`, `\"`, -1)
+	escapedString = strings.Replace(escapedString, `'`, `\'`, -1)
+	// escape _char: directive
+	escapedString = strings.Replace(escapedString, `_char:`, `_char'+':`, -1)
+	return []string{
+		"js function:\" '" + escapedString + "' \"",
+	}, nil
+}
 func (aa *ExecuteAction) Compile(a *AliasOptions) ([]string, error) {
 	commands := []string{}
 	if aa.RetrieveKey != nil {
@@ -122,13 +134,6 @@ func (aa *ExecuteAction) Compile(a *AliasOptions) ([]string, error) {
 			return nil, fmt.Errorf("ExecuteAction: %w", err)
 		}
 		commands = append(commands, out...)
-	}
-	if aa.ContinueAction != nil {
-		cmds, err := aa.ContinueAction.Compile(a)
-		if err != nil {
-			return nil, fmt.Errorf("ExecuteAction: %w", err)
-		}
-		commands = append(commands, cmds...)
 	}
 	return commands, nil
 }
@@ -151,7 +156,10 @@ func (ea *ExecuteActionSimple) Compile(a *AliasOptions) ([]string, error) {
 			return nil, participle.Errorf(ea.Pos, "ExecuteActionSimple: minify javascript: %w", err)
 		}
 		minifiedCode := minifiedCodebuffer.String()
+		// Escape quote for funciton param
 		escapedMinifiedCode := strings.Replace(minifiedCode, "\"", "\\\"", -1)
+		// replace extra newlines with semicolon (idk should be fine, seems like it)
+		escapedMinifiedCode = strings.Replace(escapedMinifiedCode, "\n", ";", -1)
 		// leave spaces inside quotes because of a supibot bug
 		out = append(out, "js function:\" "+escapedMinifiedCode+" \"")
 	} else if ea.PipeCommandLiterals != nil {
@@ -208,33 +216,6 @@ var processToken = func(trimleft, quotesize int, unquote bool, types ...string) 
 	}, types...)
 }
 
-// func (a *Alias) CompileToOps() (ops []Operation) {
-// 	for _, aa := range a.Body {
-// 		ops = append(ops, aa.CompileToOps()...)
-// 	}
-// 	return ops
-// }
-// func (aa *AliasAction) CompileToOps() (ops []Operation) {
-// 	if aa.ExecuteAction != nil {
-// 		ops = append(ops, aa.ExecuteAction.CompileToOps()...)
-// 	}
-// 	return ops
-// }
-// func (ea *ExecuteAction) CompileToOps() (ops []Operation) {
-
-// 	if ea.RetrieveKey != nil {
-// 		ops = append(ops, Operation{OP_RETRIEVE, *ea.RetrieveKey})
-// 	}
-// 	if ea.StoreKey != nil {
-// 		ops = append(ops, Operation{OP_STORE, *ea.StoreKey})
-// 	}
-// 	if ea.ExecCommandLiteral != nil {
-// 		ops = append(ops, Operation{OP_EXEC, *ea.ExecCommandLiteral})
-// 	} else if ea.PipeCommandLiterals != nil {
-// 		ops = append(ops, Operation{OP_PIPE, *ea.PipeCommandLiterals})
-// 	}
-// 	return
-// }
 func main() {
 	file := "test.supilang"
 	// file := "something.supilang"
@@ -247,11 +228,10 @@ func main() {
 	if err != nil {
 		log.Fatal(err)
 	}
-	repr.Println(alias, repr.Indent("  "), repr.OmitEmpty(true))
+	repr.Println(alias, repr.Indent("  "), repr.Hide(lexer.Position{}), repr.OmitEmpty(true))
 	code, err := alias.Compile()
 	if err != nil {
 		log.Fatal(err)
 	}
 	fmt.Println(code)
-
 }
