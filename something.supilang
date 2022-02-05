@@ -1,6 +1,3 @@
-alias IDENT
-	exec "ping"
-	exec "remind me in 40s"
-	pipe "asd" 
-	   | "PogBones"
+alias Generated
+	get "Key" -> "remindme in 20 mins"
 end

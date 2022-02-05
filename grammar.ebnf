@@ -1,11 +1,28 @@
-Alias := "alias" Ident AliasBody "end"
-Ident := Word
-AliasBody := [ NewLine ] Statement { NewLine Statement }
-Statement := "exec" String
-			| "pipe" PipeList
-PipeList := String { "|" String }+
-NewLine := [ "\r" ] "\n"
+Alias ::= "alias" , Ident , [ "prefixed" , String ] , AliasBody , "end" ;
+AliasBody ::= { AliasAction } ;
+AliasAction ::= { ExecuteAction } ;
+ExecuteAction ::= [ "get" , String , "->" ] , ExecuteActionSimple , [ "->" , ContinuedAction ] ;
+ContinuedAction ::= "set" , String | ExecuteAction;
+ExecuteActionSimple ::= String , { "|" , String } | CallAliasAction ;
+CallAliasAction ::= "call" , [ User ] , Ident ;
 
-# These are less well defined, as they are parsed in the lexer
-Word := { char }+
-String := '"' { char } '"'
+
+# Tokens
+Ident ::= letter | digit | "-" , { letter | digit | "-" }
+letter ::= "A" | "B" | "C" | "D" | "E" | "F" | "G"
+       | "H" | "I" | "J" | "K" | "L" | "M" | "N"
+       | "O" | "P" | "Q" | "R" | "S" | "T" | "U"
+       | "V" | "W" | "X" | "Y" | "Z" | "a" | "b"
+       | "c" | "d" | "e" | "f" | "g" | "h" | "i"
+       | "j" | "k" | "l" | "m" | "n" | "o" | "p"
+       | "q" | "r" | "s" | "t" | "u" | "v" | "w"
+       | "x" | "y" | "z" ;
+# digit ::= "0" | "1" | "2" | "3" | "4" | "5" | "6" | "7" | "8" | "9" ;
+# 	{`Ident`, `[-a-zA-Z_0-9]{2,30}`, nil},
+# 	{`User`, `@[-a-zA-Z_0-9]*`, nil},
+# 	// {`Word`, `[a-zA-Z_][a-zA-Z0-9_]`, nil},
+# 	{`Keyword`, `alias|end|\||exec|pipe|->|prefixed`, nil},
+# 	{`String`, `"(?:\\.|[^"])*"`, nil},
+# 	{`StorageKey`, `s"(?:\\.|[^"])*"`, nil},
+# 	{"comment", `#[^\n]*`, nil},
+# 	{"whitespace", `\s+`, nil},
