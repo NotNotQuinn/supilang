@@ -23,6 +23,5 @@ letter ::= "A" | "B" | "C" | "D" | "E" | "F" | "G"
 # 	// {`Word`, `[a-zA-Z_][a-zA-Z0-9_]`, nil},
 # 	{`Keyword`, `alias|end|\||exec|pipe|->|prefixed`, nil},
 # 	{`String`, `"(?:\\.|[^"])*"`, nil},
-# 	{`StorageKey`, `s"(?:\\.|[^"])*"`, nil},
 # 	{"comment", `#[^\n]*`, nil},
 # 	{"whitespace", `\s+`, nil},

@@ -1,17 +1,27 @@
 package main
 
 import (
+	"bytes"
 	"errors"
 	"fmt"
 	"log"
 	"os"
+	"regexp"
 	"strconv"
 	"strings"
 
 	"github.com/alecthomas/participle/v2"
 	"github.com/alecthomas/participle/v2/lexer"
 	"github.com/alecthomas/repr"
+	"github.com/tdewolff/minify"
+	"github.com/tdewolff/minify/js"
 )
+
+var m = minify.New()
+
+func init() {
+	m.AddFuncRegexp(regexp.MustCompile("^(application|text)/(x-)?(java|ecma)script$"), js.Minify)
+}
 
 // type OpType uint64
 
@@ -79,7 +89,7 @@ func (ab *AliasBody) Compile(a *AliasOptions) (string, error) {
 	for i, aa := range ab.Actions {
 		cmds, err := aa.Compile(a)
 		if err != nil {
-			return "", fmt.Errorf("AliasAction: %w", err)
+			return "", fmt.Errorf("AliasBody: %w", err)
 		}
 		commands = append(commands, cmds...)
 		if i+1 != len(ab.Actions) {
@@ -109,14 +119,14 @@ func (aa *ExecuteAction) Compile(a *AliasOptions) ([]string, error) {
 	if aa.SimpleAction != nil {
 		out, err := aa.SimpleAction.Compile(a)
 		if err != nil {
-			return nil, fmt.Errorf("AliasAction: %w", err)
+			return nil, fmt.Errorf("ExecuteAction: %w", err)
 		}
 		commands = append(commands, out...)
 	}
 	if aa.ContinueAction != nil {
 		cmds, err := aa.ContinueAction.Compile(a)
 		if err != nil {
-			return nil, fmt.Errorf("AliasAction: %w", err)
+			return nil, fmt.Errorf("ExecuteAction: %w", err)
 		}
 		commands = append(commands, cmds...)
 	}
@@ -131,18 +141,29 @@ func (ca *ContinuedAction) Compile(a *AliasOptions) ([]string, error) {
 }
 func (ea *ExecuteActionSimple) Compile(a *AliasOptions) ([]string, error) {
 	out := []string{}
-	// if ea.ExecCommandLiteral != nil {
-	// 	out = append(out, *ea.ExecCommandLiteral)
-	if ea.PipeCommandLiterals != nil {
+	if ea.JSExec != nil {
+		// Unescape backtics from our parsing
+		unescapedJSCode := strings.Replace(*ea.JSExec, "\\`", "`", -1)
+		// Minify code so that it can fit on one line, because I'm not parsing that shit
+		minifiedCodebuffer := new(bytes.Buffer)
+		err := m.Minify("application/javascript", minifiedCodebuffer, bytes.NewBufferString(unescapedJSCode))
+		if err != nil {
+			return nil, participle.Errorf(ea.Pos, "ExecuteActionSimple: minify javascript: %w", err)
+		}
+		minifiedCode := minifiedCodebuffer.String()
+		escapedMinifiedCode := strings.Replace(minifiedCode, "\"", "\\\"", -1)
+		// leave spaces inside quotes because of a supibot bug
+		out = append(out, "js function:\" "+escapedMinifiedCode+" \"")
+	} else if ea.PipeCommandLiterals != nil {
 		out = append(out, ea.PipeCommandLiterals...)
 	} else if ea.CallAlias != nil {
 		code, err := ea.CallAlias.Compile(a)
 		if err != nil {
-			return nil, fmt.Errorf("ExecuteAction: %w", err)
+			return nil, fmt.Errorf("ExecuteActionSimple: %w", err)
 		}
 		out = append(out, code)
 	} else {
-		return nil, errors.New("invalid ExecuteAction")
+		return nil, errors.New("invalid ExecuteActionSimple")
 	}
 	return out, nil
 }
@@ -154,18 +175,23 @@ func (ca *CallAliasAction) Compile(a *AliasOptions) (string, error) {
 	}
 }
 
-var UnquoteWithChar = func(types ...string) func(p *participle.Parser) error {
+var processToken = func(trimleft, quotesize int, unquote bool, types ...string) func(p *participle.Parser) error {
 	unquoteWithChar := func(s string) (string, error) {
-		quote := s[1]
-		s = s[2 : len(s)-1]
+		quote := s[trimleft]
+		s = s[trimleft+quotesize : len(s)-quotesize]
 		out := ""
 		for s != "" {
-			value, _, tail, err := strconv.UnquoteChar(s, quote)
-			if err != nil {
-				return "", err
+			if unquote {
+				value, _, tail, err := strconv.UnquoteChar(s, quote)
+				if err != nil {
+					return "", err
+				}
+				s = tail
+				out += string(value)
+			} else {
+				out += s
+				s = ""
 			}
-			s = tail
-			out += string(value)
 		}
 		return out, nil
 	}
@@ -180,59 +206,6 @@ var UnquoteWithChar = func(types ...string) func(p *participle.Parser) error {
 		t.Value = value
 		return t, nil
 	}, types...)
-}
-
-// Custom lexer for Aliases
-var aliasLexer = lexer.MustSimple([]lexer.Rule{
-	{`Ident`, `[-a-zA-Z_0-9]{2,30}`, nil},
-	{`User`, `@[-a-zA-Z_0-9]*`, nil},
-	// {`Word`, `[a-zA-Z_][a-zA-Z0-9_]`, nil},
-	{`Keyword`, `alias|end|\||exec|pipe|->|prefixed`, nil},
-	{`String`, `"(?:\\.|[^"])*"`, nil},
-	{`StorageKey`, `s"(?:\\.|[^"])*"`, nil},
-	{"comment", `#[^\n]*`, nil},
-	{"whitespace", `\s+`, nil},
-})
-
-var parser = participle.MustBuild(&Alias{},
-	participle.Lexer(aliasLexer),
-	participle.Unquote("String"),
-	UnquoteWithChar("StorageKey"),
-)
-
-type Alias struct {
-	Name      string    `  "alias" @Ident`
-	Keyprefix *string   `[ "prefixed" @String ]`
-	Body      AliasBody `  @@ "end"`
-}
-type AliasBody struct {
-	Actions []*AliasAction `@@*`
-}
-
-type AliasAction struct {
-	ExecuteAction *ExecuteAction `@@`
-}
-
-// Execute a command, storing the output for later use
-type ExecuteAction struct {
-	RetrieveKey    *string              `[ "get" @String  "->" ]`
-	SimpleAction   *ExecuteActionSimple `  @@`
-	ContinueAction *ContinuedAction     `[ "->" @@ ]`
-}
-
-type ContinuedAction struct {
-	StoreKey   *string        ` "set" @String`
-	NextAction *ExecuteAction `| @@`
-}
-
-// Execute a command, voiding the output
-type ExecuteActionSimple struct {
-	PipeCommandLiterals []string         `   @String { "|" @String } `
-	CallAlias           *CallAliasAction `|  @@`
-}
-type CallAliasAction struct {
-	User      *string `"call" [ @User ]`
-	AliasName string  `@Ident`
 }
 
 // func (a *Alias) CompileToOps() (ops []Operation) {
@@ -263,12 +236,14 @@ type CallAliasAction struct {
 // 	return
 // }
 func main() {
-	bytes, err := os.ReadFile("something.supilang")
+	file := "test.supilang"
+	// file := "something.supilang"
+	bytes, err := os.ReadFile(file)
 	if err != nil {
 		log.Fatal("open: ", err)
 	}
 	alias := &Alias{}
-	err = parser.ParseBytes("something.supilang", bytes, alias)
+	err = parser.ParseBytes(file, bytes, alias)
 	if err != nil {
 		log.Fatal(err)
 	}

@@ -1,3 +1,25 @@
-alias Generated
-	get "Key" -> "remindme in 20 mins"
+alias 0111100001100100 
+    exec "abb tee ${0+}"
+	call logAliases
+	call getNew -> js ```
+		let aliasname=(()=>{
+			customData.set('0111100001100100-passthrough', false);
+			if(args[0] == '_') { 
+				customData.set('0111100001100100-passthrough', true);
+				return aliasStack[0]
+			}
+			return args[0] 
+		})();
+		customData.set('0111100001100100-aliasname', aliasname);
+		aliasname;
+	```
+	call backupAlias
+	js ```
+		let aliascode = customData.get('alias-backup-'+customData.get('0111100001100100-aliasname'));
+		(()=>{;;
+			if (customData.get('0111100001100100-passthrough') || /_char:|function:|0111100001100100/.test(aliascode)) {
+				return '_char'+'::: null :: js tee[tee.length-2].slice(3)'
+			} return '_char'+'::: null :: alias edit '+customData.get('0111100001100100-aliasname')+' '+aliascode+' | '+(executor === 'quinndt' ? 'alias run' : 'alias try quinndt')+' 0111100001100100 :: null :: js customData.set(\'0111100001100100-log\', [...new Set([...(customData.get(\'0111100001100100-log\') || \'\').split(\' \'), customData.get(\'0111100001100100-aliasname\') ?? \'_\'])].join(\' \')) :: null :: js tee[tee.length-2].slice(3)';;})()
+	``` -> exec "pipe"
 end
+

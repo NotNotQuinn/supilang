@@ -1,0 +1,7 @@
+alias alias
+	js ```
+
+	args.join(" ")
+
+	```
+end
