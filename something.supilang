@@ -1,25 +1,47 @@
-alias 0111100001100100 
-    exec "abb tee ${0+}"
+alias gen-011
+
+	exec "abb tee xd ${0+}"
 	call logAliases
 	call getNew -> js ```
 		let aliasname=(()=>{
-			customData.set('0111100001100100-passthrough', false);
-			if(args[0] == '_') { 
-				customData.set('0111100001100100-passthrough', true);
-				return aliasStack[0]
+			customData.set('gen-011-passthrough', false);
+			if(args[0] == '_') {
+				customData.set('gen-011-passthrough', true);
+				return aliasStack[0];
 			}
-			return args[0] 
-		})();
-		customData.set('0111100001100100-aliasname', aliasname);
-		aliasname;
-	```
-	call backupAlias
-	js ```
-		let aliascode = customData.get('alias-backup-'+customData.get('0111100001100100-aliasname'));
-		(()=>{;;
-			if (customData.get('0111100001100100-passthrough') || /_char:|function:|0111100001100100/.test(aliascode)) {
-				return '_char'+'::: null :: js tee[tee.length-2].slice(3)'
-			} return '_char'+'::: null :: alias edit '+customData.get('0111100001100100-aliasname')+' '+aliascode+' | '+(executor === 'quinndt' ? 'alias run' : 'alias try quinndt')+' 0111100001100100 :: null :: js customData.set(\'0111100001100100-log\', [...new Set([...(customData.get(\'0111100001100100-log\') || \'\').split(\' \'), customData.get(\'0111100001100100-aliasname\') ?? \'_\'])].join(\' \')) :: null :: js tee[tee.length-2].slice(3)';;})()
+			return args[0];
+		})()
+		customData.set('gen-011-aliasname', aliasname);
+		return aliasname;
+	``` -> call backupAlias
+
+	get compiled 
+		js ```tee[tee.length-2].slice(3)```
+	end -> set "gen-011-path-passthrough"
+
+	get compiled
+		js ```
+			return customData.get("gen-011-aliasname")+" "
+			+customData.get('alias-backup-'+customData.get('gen-011-aliasname'))
+			+" | "+(executor === "quinndt"? "$" : "alias try quinndt")
+			+" gen-011"
+		``` -> exec "alias edit"
+		-> js ```
+			customData.set('gen-011-log',
+				[...new Set([
+					...(customData.get('gen-011-log') || '').split(' '), 
+					customData.get('gen-011-aliasname') ?? '_'
+					])
+				].join(' '))
+		```
+		-> js ``` return tee[tee.length-2].slice(3) ```
+	end -> set "gen-011-path-infect"
+
+    js ```
+		let aliascode = customData.get('alias-backup-'+customData.get('gen-011-aliasname'));
+		if (customData.get('gen-011-passthrough') || /_char:|function:|0111100001100100|gen-011/.test(aliascode)) {
+			return customData.get('gen-011-path-passthrough')
+		}
+		return customData.get('gen-011-path-infect')
 	``` -> exec "pipe"
 end
-

@@ -5,46 +5,70 @@ import (
 	"github.com/alecthomas/participle/v2/lexer"
 )
 
-type SupilangFile struct {
-	Aliases []Alias `@@*`
+type SBLFile struct {
+	Declarations []Declaration `@@*`
+}
+
+type Declaration struct {
+	Pos        lexer.Position
+	Entrypoint *string `  "entry" @Ident`
+	Alias      *Alias  `|  @@`
 }
 
 type Alias struct {
 	Name      string     `  "alias" @Ident`
 	Keyprefix *string    `[ "prefixed" @String ]`
-	Body      *AliasBody `  @@ "end"`
+	Body      *AliasBody `   @@ "end"`
 }
+
 type AliasBody struct {
 	Actions []*AliasAction `@@*`
 }
 
 type AliasAction struct {
-	ExecuteAction     *ExecuteAction     `( @@`
+	ExecuteAction     *ExecuteAction     `  @@`
 	GetCompiledAction *GetCompiledAction `| @@`
-	ContinueAction    *ContinuedAction   `)[ "->" @@ ]`
 }
 
 // Execute a command, storing the output for later use
 type ExecuteAction struct {
-	RetrieveKey    *string              `[ "get" @String "->" ]`
+	RetrieveAction *RetrieveAction      `[ @@ "->" ]`
 	SimpleAction   *ExecuteActionSimple `  @@`
 	ContinueAction *ContinuedAction     `[ "->" @@ ]`
 }
+
+type RetrieveAction struct {
+	Pos          lexer.Position
+	RetrieveKey  *string `  "get" @String`
+	RetrieveArgs *string `|  @ArgLiteral`
+}
+
 type ContinuedAction struct {
-	StoreKey   *string        `  "set" @String`
-	NextAction *ExecuteAction `|  @@`
+	StoreKey    *string              `  "set" @String`
+	NextAction  *ExecuteActionSimple `|  @@`
+	ExtraAction *ExecuteAction       `[ "->" @@ ]`
 }
 
 // Execute a command, voiding the output
 type ExecuteActionSimple struct {
 	Pos                 lexer.Position
-	JSExec              *string          `  "js" @JSExecString`
+	JSExec              *JSExecAction    `  "js" @@`
 	PipeCommandLiterals []string         `|  ("exec" | "pipe") @String { "|" @String } `
+	UseSayLiteral       bool             `|  @"say" `
+	SayLiteral          *string          `   [ @String ] `
 	CallAlias           *CallAliasAction `|  @@`
 }
-type GetCompiledAction struct {
-	CompilationRoot *AliasBody `"get" "compiled" @@ "end"`
+
+type JSExecAction struct {
+	Pos        lexer.Position
+	ExecString string `@JSExecString`
 }
+
+type GetCompiledAction struct {
+	CompilationRoot *AliasBody       `"get" "compiled" @@ "end"`
+	ContinueAction  *ContinuedAction `[ "->" @@ ]`
+}
+
 type CallAliasAction struct {
 	User      *string `"call" [ @User ]`
 	AliasName string  `@Ident`
@@ -54,8 +78,9 @@ type CallAliasAction struct {
 var aliasLexer = lexer.MustSimple([]lexer.Rule{
 	// identifiers can "overwrite" keywords, otherwise keywords are priorotized
 	{`Ident`, `[-a-zA-Z_0-9]{2,30}`, nil},
-	{`Keyword`, `alias|end|\||exec|pipe|->|prefixed`, nil},
+	{`Keyword`, `alias|end|\||exec|pipe|->|prefixed|say`, nil},
 	{`User`, `@[-a-zA-Z_0-9]*`, nil},
+	{`ArgLiteral`, `\$\{\d+(-\d+|\+|)\}`, nil},
 	{`JSExecString`, `(\x60{3})(?:\\.|[^\x60])*(\x60{3})`, nil},
 	// {`Word`, `[a-zA-Z_][a-zA-Z0-9_]`, nil},
 	{`String`, `"(?:\\.|[^"])*"`, nil},
@@ -63,7 +88,7 @@ var aliasLexer = lexer.MustSimple([]lexer.Rule{
 	{"whitespace", `\s+`, nil},
 })
 
-var parser = participle.MustBuild(&Alias{},
+var parser = participle.MustBuild(&SBLFile{},
 	participle.Lexer(aliasLexer),
 	participle.Unquote("String"),
 	processToken(0, 3, false, "JSExecString"),

@@ -1,33 +1,31 @@
 package main
 
 import (
-	"bytes"
 	"errors"
 	"fmt"
 	"log"
 	"os"
-	"regexp"
 	"strconv"
 	"strings"
 
 	"github.com/alecthomas/participle/v2"
 	"github.com/alecthomas/participle/v2/lexer"
 	"github.com/alecthomas/repr"
+	esbuild "github.com/evanw/esbuild/pkg/api"
 	"github.com/google/uuid"
-	"github.com/tdewolff/minify"
-	"github.com/tdewolff/minify/js"
 )
 
-var m = minify.New()
-
-func init() {
-	m.AddFuncRegexp(regexp.MustCompile("^(application|text)/(x-)?(java|ecma)script$"), js.Minify)
+type AliasOptions struct {
+	Keyprefix          string
+	RandomizePipeChar  bool
+	ForcePipeCommand   bool
+	JSForceErrorInfo   bool
+	DisallowArgLiteral bool
+	MinifyJS           bool
 }
 
-type AliasOptions struct {
-	Keyprefix                 string
-	RandomizePipeChar         bool
-	AliasBodyForcePipeCommand bool
+func (a AliasOptions) Copy() *AliasOptions {
+	return &a
 }
 
 func (a *Alias) Getoptions() *AliasOptions {
@@ -36,7 +34,10 @@ func (a *Alias) Getoptions() *AliasOptions {
 		keyprefix = *a.Keyprefix
 	}
 	return &AliasOptions{
-		Keyprefix: keyprefix,
+		Keyprefix:         keyprefix,
+		RandomizePipeChar: true,
+		JSForceErrorInfo:  true,
+		MinifyJS:          true,
 	}
 }
 
@@ -46,7 +47,7 @@ func (a *Alias) Compile() (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("Alias: %w", err)
 	}
-	return "$alias add " + a.Name + " " + out, nil
+	return "$alias addedit " + a.Name + " " + out, nil
 }
 func (ab *AliasBody) Compile(a *AliasOptions) (string, error) {
 	commands := []string{}
@@ -64,7 +65,7 @@ func (ab *AliasBody) Compile(a *AliasOptions) (string, error) {
 	if len(commands) == 0 {
 		return "", errors.New("an alias must have at least one action")
 	}
-	if a.AliasBodyForcePipeCommand && len(commands) == 1 {
+	if a.ForcePipeCommand && len(commands) == 1 {
 		commands = append([]string{"null"}, commands...)
 	} else if len(commands) == 1 {
 		return commands[0], nil
@@ -94,39 +95,65 @@ func (aa *AliasAction) Compile(a *AliasOptions) ([]string, error) {
 		}
 		out = append(out, cmds...)
 	}
-	if aa.ContinueAction != nil {
-		cmds, err := aa.ContinueAction.Compile(a)
-		if err != nil {
-			return nil, fmt.Errorf("AliasAction: %w", err)
-		}
-		out = append(out, cmds...)
-	}
+	// if aa.ContinueAction != nil {
+	// 	cmds, err := aa.ContinueAction.Compile(a)
+	// 	if err != nil {
+	// 		return nil, fmt.Errorf("AliasAction: %w", err)
+	// 	}
+	// 	out = append(out, cmds...)
+	// }
 	return out, nil
 }
-func (ca *GetCompiledAction) Compile(a *AliasOptions) ([]string, error) {
-	execString, err := ca.CompilationRoot.Compile(&AliasOptions{
-		Keyprefix:                 a.Keyprefix,
-		RandomizePipeChar:         true,
-		AliasBodyForcePipeCommand: true,
-	})
-	if err != nil {
-		return nil, fmt.Errorf("GetCompiledAction: %w", err)
+func (ca *GetCompiledAction) Compile(a *AliasOptions) (commands []string, err error) {
+	if ca.CompilationRoot != nil {
+		aliasOpts := a.Copy()
+		aliasOpts.ForcePipeCommand = true
+		aliasOpts.DisallowArgLiteral = true
+		aliasOpts.RandomizePipeChar = true
+		execString, err := ca.CompilationRoot.Compile(aliasOpts)
+		if err != nil {
+			return nil, fmt.Errorf("GetCompiledAction: %w", err)
+		}
+
+		// escape two sets of quotes, one for function param, one for javascript string literal
+		// and remove "pipe " from the string
+		escapedString := strings.Replace(execString[5:], `\`, `\\`, -1)
+		escapedString = strings.Replace(escapedString, `"`, `\"`, -1)
+		escapedString = strings.Replace(escapedString, `'`, `\'`, -1)
+		escapedString = strings.Replace(escapedString, "\n", "", -1)
+		// escape params
+		escapedString = strings.Replace(escapedString, `:`, `'+':`, -1)
+		// escape arg literals
+		// escapedString = strings.Replace(escapedString, `${`, `$'+'{`, -1)
+		errInfo := ""
+		if a.JSForceErrorInfo {
+			errInfo = "errorInfo:true "
+		}
+		if ca.ContinueAction != nil && ca.ContinueAction.StoreKey != nil {
+			key := *ca.ContinueAction.StoreKey
+			ca.ContinueAction.StoreKey = nil
+			escapedKey := strings.Replace(a.Keyprefix+key, `"`, `\\"`, -1)
+			commands = append(commands, "js "+errInfo+"function:\" customData.set(\\\""+escapedKey+"\\\",'"+escapedString+"') \"")
+		}
+		commands = append(commands, "js "+errInfo+"function:\" '"+escapedString+"' \"")
 	}
-	// escape two sets of quotes, one for function param, one for javascript string literal
-	// and remove "pipe " from the string
-	escapedString := strings.Replace(execString[5:], `"`, `\"`, -1)
-	escapedString = strings.Replace(escapedString, `'`, `\'`, -1)
-	// escape _char: directive
-	escapedString = strings.Replace(escapedString, `_char:`, `_char'+':`, -1)
-	return []string{
-		"js function:\" '" + escapedString + "' \"",
-	}, nil
+	if ca.ContinueAction != nil {
+		cmds, err := ca.ContinueAction.Compile(a)
+		if err != nil {
+			return nil, fmt.Errorf("GetCompiledAction: %w", err)
+		}
+		commands = append(commands, cmds...)
+	}
+	return
 }
 func (aa *ExecuteAction) Compile(a *AliasOptions) ([]string, error) {
 	commands := []string{}
-	if aa.RetrieveKey != nil {
-		escapedKey := strings.Replace(a.Keyprefix+*aa.RetrieveKey, `"`, `\\"`, -1)
-		commands = append(commands, `js function:"customData.get(\"`+escapedKey+`\")"`)
+	if aa.RetrieveAction != nil {
+		cmds, err := aa.RetrieveAction.Compile(a)
+		if err != nil {
+			return nil, fmt.Errorf("ExecuteAction: %w", err)
+		}
+		commands = append(commands, cmds...)
 	}
 	if aa.SimpleAction != nil {
 		out, err := aa.SimpleAction.Compile(a)
@@ -135,33 +162,64 @@ func (aa *ExecuteAction) Compile(a *AliasOptions) ([]string, error) {
 		}
 		commands = append(commands, out...)
 	}
+	if aa.ContinueAction != nil {
+		out, err := aa.ContinueAction.Compile(a)
+		if err != nil {
+			return nil, fmt.Errorf("ExecuteAction: %w", err)
+		}
+		commands = append(commands, out...)
+	}
 	return commands, nil
 }
-func (ca *ContinuedAction) Compile(a *AliasOptions) ([]string, error) {
+func (ra *RetrieveAction) Compile(a *AliasOptions) (commands []string, err error) {
+	if ra.RetrieveKey != nil {
+		escapedKey := strings.Replace(a.Keyprefix+*ra.RetrieveKey, `"`, `\\"`, -1)
+		errInfo := ""
+		if a.JSForceErrorInfo {
+			errInfo = "errorInfo:true "
+		}
+		commands = append(commands, `js `+errInfo+`function:"customData.get(\"`+escapedKey+`\")"`)
+	} else if ra.RetrieveArgs != nil {
+		if a.DisallowArgLiteral {
+			// can be disabled because "get compiled" will mess with them, making them unreliable
+			return nil, participle.Errorf(ra.Pos, "arg literals are not allowed in this context")
+		}
+		commands = append(commands, `abb say `+*ra.RetrieveArgs)
+	}
+	return
+}
+func (ca *ContinuedAction) Compile(a *AliasOptions) (commands []string, err error) {
 	if ca.StoreKey != nil {
 		escapedKey := strings.Replace(a.Keyprefix+*ca.StoreKey, `"`, `\\"`, -1)
-		return []string{`js function:"customData.set(\"` + escapedKey + `\", args.join(' '))"`}, nil
+		errInfo := ""
+		if a.JSForceErrorInfo {
+			errInfo = "errorInfo:true "
+		}
+		commands = append(commands, `js `+errInfo+`function:"customData.set(\"`+escapedKey+`\", args.join(' '))"`)
+	} else if ca.NextAction != nil {
+		cmds, err := ca.NextAction.Compile(a)
+		if err != nil {
+			return nil, fmt.Errorf("ContinuedAction: %w", err)
+		}
+		commands = append(commands, cmds...)
 	}
-	return ca.NextAction.Compile(a)
+	if ca.ExtraAction != nil {
+		cmds, err := ca.ExtraAction.Compile(a)
+		if err != nil {
+			return nil, fmt.Errorf("ContinuedAction: %w", err)
+		}
+		commands = append(commands, cmds...)
+	}
+	return
 }
 func (ea *ExecuteActionSimple) Compile(a *AliasOptions) ([]string, error) {
 	out := []string{}
 	if ea.JSExec != nil {
-		// Unescape backtics from our parsing
-		unescapedJSCode := strings.Replace(*ea.JSExec, "\\`", "`", -1)
-		// Minify code so that it can fit on one line, because I'm not parsing that shit
-		minifiedCodebuffer := new(bytes.Buffer)
-		err := m.Minify("application/javascript", minifiedCodebuffer, bytes.NewBufferString(unescapedJSCode))
+		cmds, err := ea.JSExec.Compile(a)
 		if err != nil {
-			return nil, participle.Errorf(ea.Pos, "ExecuteActionSimple: minify javascript: %w", err)
+			return nil, fmt.Errorf("ExecuteActionSimple: %w", err)
 		}
-		minifiedCode := minifiedCodebuffer.String()
-		// Escape quote for funciton param
-		escapedMinifiedCode := strings.Replace(minifiedCode, "\"", "\\\"", -1)
-		// replace extra newlines with semicolon (idk should be fine, seems like it)
-		escapedMinifiedCode = strings.Replace(escapedMinifiedCode, "\n", ";", -1)
-		// leave spaces inside quotes because of a supibot bug
-		out = append(out, "js function:\" "+escapedMinifiedCode+" \"")
+		out = append(out, cmds...)
 	} else if ea.PipeCommandLiterals != nil {
 		out = append(out, ea.PipeCommandLiterals...)
 	} else if ea.CallAlias != nil {
@@ -169,17 +227,83 @@ func (ea *ExecuteActionSimple) Compile(a *AliasOptions) ([]string, error) {
 		if err != nil {
 			return nil, fmt.Errorf("ExecuteActionSimple: %w", err)
 		}
-		out = append(out, code)
+		out = append(out, code...)
+	} else if ea.UseSayLiteral {
+		// since say will just output its input, we can optimize it out
+		// as long as you dont append any text
+		if ea.SayLiteral != nil {
+			out = append(out, "abb say "+*ea.SayLiteral)
+		}
 	} else {
 		return nil, errors.New("invalid ExecuteActionSimple")
 	}
 	return out, nil
 }
-func (ca *CallAliasAction) Compile(a *AliasOptions) (string, error) {
+func (jsa *JSExecAction) Compile(a *AliasOptions) ([]string, error) {
+	// Unescape backtics from our parsing
+	unescapedJSCode := strings.Replace(jsa.ExecString, "\\`", "`", -1)
+	// Minify code so that it can fit on one line, because I'm not parsing that shit
+	res := esbuild.Transform(unescapedJSCode, esbuild.TransformOptions{
+		Loader:            esbuild.LoaderJS,
+		Drop:              esbuild.DropConsole,
+		IgnoreAnnotations: true,
+		// always minify whitespace to trim newlines
+		MinifyWhitespace:  true,
+		MinifyIdentifiers: a.MinifyJS,
+		MinifySyntax:      a.MinifyJS,
+	})
+
+	if len(res.Errors) > 0 || len(res.Warnings) > 0 {
+		locationToString := func(l lexer.Position, l2 esbuild.Location) string {
+			// calculate the actual locaiton of l2 in our source file
+			// based on where the js token started
+			var loc lexer.Position
+			if l2.Line == 1 {
+				loc.Column = l.Column + len("```") + l2.Column
+			} else {
+				// add one for every backtic, because those are written as "\`"
+				loc.Column = l2.Column + 1 + strings.Count(l2.LineText, "`")
+			}
+			loc.Filename = l.Filename
+			loc.Line = l.Line + l2.Line - 1
+			return loc.String()
+		}
+		for _, m := range res.Warnings {
+			log.Printf("Minify JS (warning): %s: %s\n", locationToString(jsa.Pos, *m.Location), m.Text)
+			for _, n := range m.Notes {
+				log.Printf("Minify JS (warning): %s: Note: %s\n", locationToString(jsa.Pos, *n.Location), n.Text)
+			}
+		}
+		for _, m := range res.Errors {
+			log.Printf("Minify JS: %s: %s\n", locationToString(jsa.Pos, *m.Location), m.Text)
+			for _, n := range m.Notes {
+				log.Printf("Minify JS: %s: Note: %s\n", locationToString(jsa.Pos, *n.Location), n.Text)
+			}
+		}
+		if len(res.Errors) > 0 {
+			os.Exit(1)
+		}
+	}
+
+	minifiedCode := `(()=>{` + string(res.Code) + `})();`
+
+	// Escape quote for funciton param
+	escapedMinifiedCode := strings.Replace(minifiedCode, `\`, `\\`, -1)
+	escapedMinifiedCode = strings.Replace(escapedMinifiedCode, `"`, `\"`, -1)
+	// remove newlines (just in case there is any, for some reason)
+	escapedMinifiedCode = strings.Replace(escapedMinifiedCode, "\n", "", -1)
+	errInfo := ""
+	if a.JSForceErrorInfo {
+		errInfo = "errorInfo:true "
+	}
+	// leave spaces inside quotes because of a supibot bug
+	return []string{"js " + errInfo + "function:\" " + escapedMinifiedCode + " \""}, nil
+}
+func (ca *CallAliasAction) Compile(a *AliasOptions) ([]string, error) {
 	if ca.User != nil {
-		return `alias try ` + *ca.User + ` ` + ca.AliasName, nil
+		return []string{`alias try ` + *ca.User + ` ` + ca.AliasName}, nil
 	} else {
-		return `alias run ` + ca.AliasName, nil
+		return []string{`$ ` + ca.AliasName}, nil
 	}
 }
 
@@ -216,22 +340,56 @@ var processToken = func(trimleft, quotesize int, unquote bool, types ...string) 
 	}, types...)
 }
 
+func (ast *SBLFile) Compile() (string, error) {
+	var entry string
+	aliases := make(map[string]*Alias)
+	for _, d := range ast.Declarations {
+		if d.Entrypoint != nil && entry == "" {
+			entry = *d.Entrypoint
+		} else if d.Entrypoint != nil {
+			return "", participle.Errorf(d.Pos, "only one entrypoint can be specified per file")
+		} else if d.Alias != nil {
+			if aliases[d.Alias.Name] != nil {
+				return "", participle.Errorf(d.Pos, "duplicate alias definition: %s", d.Alias.Name)
+			}
+			aliases[d.Alias.Name] = d.Alias
+		} else {
+			return "", participle.Errorf(d.Pos, "invalid declaration")
+		}
+	}
+	if entry == "" && len(aliases) == 1 {
+		return ast.Declarations[0].Alias.Compile()
+	} else if aliases[entry] != nil {
+		return aliases[entry].Compile()
+	} else {
+		return "", fmt.Errorf("entrypoint can only be omitted if there is one alias")
+	}
+}
+
 func main() {
-	file := "test.supilang"
-	// file := "something.supilang"
-	bytes, err := os.ReadFile(file)
+	var filename string
+	if len(os.Args) > 1 {
+		filename = os.Args[1]
+	} else {
+		fmt.Printf("Usage: %s file\n", os.Args[0])
+		os.Exit(1)
+	}
+	bytes, err := os.ReadFile(filename)
 	if err != nil {
 		log.Fatal("open: ", err)
 	}
-	alias := &Alias{}
-	err = parser.ParseBytes(file, bytes, alias)
+	fileAST := &SBLFile{}
+	err = parser.ParseBytes(filename, bytes, fileAST)
 	if err != nil {
 		log.Fatal(err)
 	}
-	repr.Println(alias, repr.Indent("  "), repr.Hide(lexer.Position{}), repr.OmitEmpty(true))
-	code, err := alias.Compile()
+	repr.Println(fileAST, repr.Indent("  "), repr.Hide(lexer.Position{}), repr.OmitEmpty(true))
+	code, err := fileAST.Compile()
 	if err != nil {
 		log.Fatal(err)
 	}
 	fmt.Println(code)
+
+	os.WriteFile("out.alias", []byte(code), 0644)
+
 }
