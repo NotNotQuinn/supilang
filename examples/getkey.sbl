@@ -1,0 +1,7 @@
+# Simple example, gets key "xd" from customData and uses it as output
+# When retrieving a value, you must use the value somehow, that is why 
+# we continue to say
+
+alias getxd
+	get "xd" -> say
+end

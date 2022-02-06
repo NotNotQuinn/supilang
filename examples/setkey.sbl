@@ -1,0 +1,6 @@
+# Simple example, takes the output of "ping" and sets that as key "xd" in customData
+# Uses $js to set the value
+
+alias IDENTIFIER
+	exec "ping" -> set "xd"
+end

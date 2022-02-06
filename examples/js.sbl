@@ -1,0 +1,21 @@
+#entry JSArgs
+
+# There is a special syntax for $js, because escaping quotes is annoying
+#alias usingJS
+#	js ```
+#		// we are now in JS
+#		// The text here will be trimed of comments and whitespace (properly)
+#		// and wrapped in a function expression
+#		// The only character that needs to be escaped in this context
+#		// is a backtic like so -> \`
+#		const xd = "lmao"
+#		return xd
+#	```
+#end
+
+# You can get arguments using the normal syntax you would in an alias
+alias JSArgs
+	${0+} -> js ```
+		return "You ("+executor+") said: "+args.join(" ")
+	```
+end

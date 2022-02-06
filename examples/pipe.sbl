@@ -1,0 +1,6 @@
+# Simple example, outputs "lmao xd"
+# Alternatively "pipe" can be used in place of "exec" (there is no difference)
+
+alias pipedCommands
+	exec "abb say xd" | "abb say lmao"
+end

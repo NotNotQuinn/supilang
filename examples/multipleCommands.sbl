@@ -1,0 +1,25 @@
+# This is an entry declaration
+# it tells the compiler what alias to actually compile 
+# when you put more then one alias in a file
+entry combinedExecutionsPipe
+
+# In this example the two executions have no interaction
+# They are executed in order, but one does not pipe to the other
+# So it will always output the string "Output:"
+alias seperateExecutions
+	exec "ping"
+	exec "abb say Ouput:"
+end
+
+# To pipe commands together you can use the arrow (called a "continuation")
+alias combinedExecutionsArrow
+	exec "ping" ->
+	exec "abb say Ouput:"
+end
+
+# or just use the pipe symbol "|" if you were going to exec something anyways
+alias combinedExecutionsPipe
+	exec "ping"
+	   | "abb say Output:"
+end
+

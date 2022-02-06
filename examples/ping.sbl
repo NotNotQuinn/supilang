@@ -1,0 +1,6 @@
+# Simplest example, creates an alias called "ping" that just executes $ping
+# Equivelent to `$alias add ping ping` (note that there is no arguments passed to ping)
+
+alias ping
+	exec "ping"
+end
