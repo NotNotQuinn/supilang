@@ -203,8 +203,8 @@ func (ca *ContinuedAction) Compile(a *AliasOptions) (commands []string, err erro
 		}
 		commands = append(commands, cmds...)
 	}
-	if ca.ExtraAction != nil {
-		cmds, err := ca.ExtraAction.Compile(a)
+	if ca.SecondContinue != nil {
+		cmds, err := ca.SecondContinue.Compile(a)
 		if err != nil {
 			return nil, fmt.Errorf("ContinuedAction: %w", err)
 		}
@@ -259,7 +259,7 @@ func (jsa *JSExecAction) Compile(a *AliasOptions) ([]string, error) {
 			// based on where the js token started
 			var loc lexer.Position
 			if l2.Line == 1 {
-				loc.Column = l.Column + len("```") + l2.Column
+				loc.Column = l.Column + len("```") + l2.Column + strings.Count(l2.LineText, "`")
 			} else {
 				// add one for every backtic, because those are written as "\`"
 				loc.Column = l2.Column + 1 + strings.Count(l2.LineText, "`")

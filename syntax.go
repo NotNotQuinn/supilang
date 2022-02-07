@@ -44,9 +44,9 @@ type RetrieveAction struct {
 }
 
 type ContinuedAction struct {
-	StoreKey    *string              `  "set" @String`
-	NextAction  *ExecuteActionSimple `|  @@`
-	ExtraAction *ExecuteAction       `[ "->" @@ ]`
+	StoreKey       *string              `  "set" @String`
+	NextAction     *ExecuteActionSimple `|  @@`
+	SecondContinue *ContinuedAction     `[ "->" @@ ]`
 }
 
 // Execute a command, voiding the output
@@ -78,7 +78,7 @@ type CallAliasAction struct {
 var aliasLexer = lexer.MustSimple([]lexer.Rule{
 	// identifiers can "overwrite" keywords, otherwise keywords are priorotized
 	{`Ident`, `[-a-zA-Z_0-9]{2,30}`, nil},
-	{`Keyword`, `alias|end|\||exec|pipe|->|prefixed|say`, nil},
+	{`Keyword`, `alias|end|\||exec|pipe|->|prefixed|say|get|compiled|call|say|entry`, nil},
 	{`User`, `@[-a-zA-Z_0-9]*`, nil},
 	{`ArgLiteral`, `\$\{\d+(-\d+|\+|)\}`, nil},
 	{`JSExecString`, `(\x60{3})(?:\\.|[^\x60])*(\x60{3})`, nil},
