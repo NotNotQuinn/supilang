@@ -22,4 +22,3 @@ alias combinedExecutionsPipe
 	exec "ping"
 	   | "abb say Output:"
 end
-
