@@ -38,13 +38,15 @@ type ExecuteAction struct {
 }
 
 type RetrieveAction struct {
-	Pos          lexer.Position
-	RetrieveKey  *string `  "get" @String`
-	RetrieveArgs *string `|  @ArgLiteral`
+	Pos              lexer.Position
+	LocalRetrieveKey bool    `  "get" [ @"local" ] `
+	RetrieveKey      *string `   @String`
+	RetrieveArgs     *string `|  @ArgLiteral`
 }
 
 type ContinuedAction struct {
-	StoreKey       *string              `  "set" @String`
+	StoreKeyLocal  bool                 `  "set" [ @"local" ]`
+	StoreKey       *string              `   @String`
 	NextAction     *ExecuteActionSimple `|  @@`
 	SecondContinue *ContinuedAction     `[ "->" @@ ]`
 }

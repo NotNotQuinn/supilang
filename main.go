@@ -16,6 +16,7 @@ import (
 )
 
 type AliasOptions struct {
+	Aliasname          string
 	Keyprefix          string
 	RandomizePipeChar  bool
 	ForcePipeCommand   bool
@@ -34,6 +35,7 @@ func (a *Alias) Getoptions() *AliasOptions {
 		keyprefix = *a.Keyprefix
 	}
 	return &AliasOptions{
+		Aliasname:         a.Name,
 		Keyprefix:         keyprefix,
 		RandomizePipeChar: true,
 		JSForceErrorInfo:  true,
@@ -131,8 +133,13 @@ func (ca *GetCompiledAction) Compile(a *AliasOptions) (commands []string, err er
 		}
 		if ca.ContinueAction != nil && ca.ContinueAction.StoreKey != nil {
 			key := *ca.ContinueAction.StoreKey
+			if ca.ContinueAction.StoreKeyLocal {
+				key = a.Keyprefix + key
+			}
+
 			ca.ContinueAction.StoreKey = nil
-			escapedKey := strings.Replace(a.Keyprefix+key, `"`, `\\"`, -1)
+			ca.ContinueAction.StoreKeyLocal = false
+			escapedKey := strings.Replace(key, `"`, `\\"`, -1)
 			commands = append(commands, "js "+errInfo+"function:\" customData.set(\\\""+escapedKey+"\\\",'"+escapedString+"') \"")
 		}
 		commands = append(commands, "js "+errInfo+"function:\" '"+escapedString+"' \"")
@@ -173,7 +180,12 @@ func (aa *ExecuteAction) Compile(a *AliasOptions) ([]string, error) {
 }
 func (ra *RetrieveAction) Compile(a *AliasOptions) (commands []string, err error) {
 	if ra.RetrieveKey != nil {
-		escapedKey := strings.Replace(a.Keyprefix+*ra.RetrieveKey, `"`, `\\"`, -1)
+		key := *ra.RetrieveKey
+		if ra.LocalRetrieveKey {
+			key = a.Keyprefix + *ra.RetrieveKey
+		}
+
+		escapedKey := strings.Replace(key, `"`, `\\"`, -1)
 		errInfo := ""
 		if a.JSForceErrorInfo {
 			errInfo = "errorInfo:true "
@@ -190,7 +202,12 @@ func (ra *RetrieveAction) Compile(a *AliasOptions) (commands []string, err error
 }
 func (ca *ContinuedAction) Compile(a *AliasOptions) (commands []string, err error) {
 	if ca.StoreKey != nil {
-		escapedKey := strings.Replace(a.Keyprefix+*ca.StoreKey, `"`, `\\"`, -1)
+		key := *ca.StoreKey
+		if ca.StoreKeyLocal {
+			key = a.Keyprefix + *ca.StoreKey
+		}
+
+		escapedKey := strings.Replace(key, `"`, `\\"`, -1)
 		errInfo := ""
 		if a.JSForceErrorInfo {
 			errInfo = "errorInfo:true "
@@ -242,11 +259,31 @@ func (ea *ExecuteActionSimple) Compile(a *AliasOptions) ([]string, error) {
 func (jsa *JSExecAction) Compile(a *AliasOptions) ([]string, error) {
 	// Unescape backtics from our parsing
 	unescapedJSCode := strings.Replace(jsa.ExecString, "\\`", "`", -1)
+
+	escapedKeyprefix := strings.Replace(a.Keyprefix, `"`, `\"`, -1)
+	escapedKeyprefix = strings.Replace(escapedKeyprefix, "\n", "\\n", -1)
+	injectedRuntime := `
+		// get the local value for the key
+		function getLocal(key) {
+			return customData.get("` + escapedKeyprefix + `"+key)
+		}
+		// set the local value for the key
+		function setLocal(key, value) {
+			return customData.set("` + escapedKeyprefix + `"+key, value)
+		}
+		// get the local key prefix
+		function getLocalPrefix() {
+			return "` + escapedKeyprefix + `"
+		}
+	` + `;`
+
 	// Minify code so that it can fit on one line, because I'm not parsing that shit
-	res := esbuild.Transform(unescapedJSCode, esbuild.TransformOptions{
+	res := esbuild.Transform(injectedRuntime+unescapedJSCode, esbuild.TransformOptions{
 		Loader:            esbuild.LoaderJS,
-		Drop:              esbuild.DropConsole,
+		Drop:              esbuild.DropConsole, // console doesnt even exist in $js
 		IgnoreAnnotations: true,
+		// Tree shake to remove our runtime if it doesnt get used
+		TreeShaking: esbuild.TreeShakingTrue,
 		// always minify whitespace to trim newlines
 		MinifyWhitespace:  true,
 		MinifyIdentifiers: a.MinifyJS,
@@ -258,14 +295,23 @@ func (jsa *JSExecAction) Compile(a *AliasOptions) ([]string, error) {
 			// calculate the actual locaiton of l2 in our source file
 			// based on where the js token started
 			var loc lexer.Position
-			if l2.Line == 1 {
-				loc.Column = l.Column + len("```") + l2.Column + strings.Count(l2.LineText, "`")
+			injectedLines := strings.Split(injectedRuntime, "\n")
+			// If its the first line of where the user wrote....
+			if l2.Line-len(injectedLines)+1 == 1 {
+				lenLastInjectedLine := len(injectedLines[len(injectedLines)-1])
+				loc.Column =
+					//  text within source file, before js starts
+					l.Column + len("```") +
+						//  text written after the backtics
+						(l2.Column - lenLastInjectedLine) +
+						//  offset for escaping the backtic character with backslash
+						strings.Count(l2.LineText[lenLastInjectedLine:], "`")
 			} else {
 				// add one for every backtic, because those are written as "\`"
 				loc.Column = l2.Column + 1 + strings.Count(l2.LineText, "`")
 			}
 			loc.Filename = l.Filename
-			loc.Line = l.Line + l2.Line - 1
+			loc.Line = l.Line + l2.Line - len(injectedLines)
 			return loc.String()
 		}
 		for _, m := range res.Warnings {
@@ -285,6 +331,8 @@ func (jsa *JSExecAction) Compile(a *AliasOptions) ([]string, error) {
 		}
 	}
 
+	// this string must not start or end with a double quote
+	// supibot trims them, thinking they are part of the parameter.
 	minifiedCode := `(()=>{` + string(res.Code) + `})();`
 
 	// Escape quote for funciton param
@@ -296,8 +344,7 @@ func (jsa *JSExecAction) Compile(a *AliasOptions) ([]string, error) {
 	if a.JSForceErrorInfo {
 		errInfo = "errorInfo:true "
 	}
-	// leave spaces inside quotes because of a supibot bug
-	return []string{"js " + errInfo + "function:\" " + escapedMinifiedCode + " \""}, nil
+	return []string{"js " + errInfo + "function:\"" + escapedMinifiedCode + "\""}, nil
 }
 func (ca *CallAliasAction) Compile(a *AliasOptions) ([]string, error) {
 	if ca.User != nil {
