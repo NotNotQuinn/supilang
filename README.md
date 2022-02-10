@@ -4,6 +4,9 @@ Supibot Language (SBL), is a language that compiles to supibot aliases. I create
 
 Supibot aliases (as defined in the help for `$alias`) let you create your own aliases (shorthands) for any other combination of commands and arguments.
 
+### Docs
+
+Documentation is in [./docs.md](./docs.md).
 ### Simple example:
 
 ```ini
