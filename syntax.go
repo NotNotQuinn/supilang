@@ -27,7 +27,7 @@ type AliasBody struct {
 
 type AliasAction struct {
 	ExecuteAction     *ExecuteAction     `  @@`
-	GetCompiledAction *GetCompiledAction `| @@`
+	GetCompiledAction *GetCompiledAction `| @@` // possibly refactor into retrieve action
 }
 
 // Execute a command, storing the output for later use
@@ -82,7 +82,7 @@ var aliasLexer = lexer.MustSimple([]lexer.Rule{
 	{`Ident`, `[-a-zA-Z_0-9]{2,30}`, nil},
 	{`Keyword`, `alias|end|\||exec|pipe|->|prefixed|say|get|compiled|call|say|entry`, nil},
 	{`User`, `@[-a-zA-Z_0-9]*`, nil},
-	{`ArgLiteral`, `\$\{\d+(-\d+|\+|)\}`, nil},
+	{`ArgLiteral`, `\${(\d+\+?|-?\d+|-?\d+\.\.(-?\d+)?|\d+-\d+|executor|channel)}`, nil},
 	{`JSExecString`, `(\x60{3})(?:\\.|[^\x60])*(\x60{3})`, nil},
 	// {`Word`, `[a-zA-Z_][a-zA-Z0-9_]`, nil},
 	{`String`, `"(?:\\.|[^"])*"`, nil},
