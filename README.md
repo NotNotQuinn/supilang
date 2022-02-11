@@ -12,9 +12,9 @@ Documentation is in [./docs.md](./docs.md).
 ```ini
 # xd.sbl
 
-# Executes ping, replacing "Ping" at the start with "pajaDink PING!!!!!"
+# Executes ping, replacing "Pong" at the start with "pajaDink PONG!!!!!"
 alias xd
-	exec "ping" -> exec "abb replace regex:^Pong replacement:\"pajaDink PING!!!!!\""
+	exec "ping" -> exec "abb replace regex:^Pong replacement:\"pajaDink PONG!!!!!\""
 end
 ```
 
