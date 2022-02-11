@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"regexp"
+	"sort"
 	"strconv"
 	"strings"
 
@@ -12,13 +14,11 @@ import (
 	"github.com/alecthomas/participle/v2/lexer"
 	"github.com/alecthomas/repr"
 	esbuild "github.com/evanw/esbuild/pkg/api"
-	"github.com/google/uuid"
 )
 
 type AliasOptions struct {
 	Aliasname          string
 	Keyprefix          string
-	RandomizePipeChar  bool
 	ForcePipeCommand   bool
 	JSForceErrorInfo   bool
 	DisallowArgLiteral bool
@@ -35,11 +35,10 @@ func (a *Alias) Getoptions() *AliasOptions {
 		keyprefix = *a.Keyprefix
 	}
 	return &AliasOptions{
-		Aliasname:         a.Name,
-		Keyprefix:         keyprefix,
-		RandomizePipeChar: true,
-		JSForceErrorInfo:  true,
-		MinifyJS:          true,
+		Aliasname:        a.Name,
+		Keyprefix:        keyprefix,
+		JSForceErrorInfo: true,
+		MinifyJS:         true,
 	}
 }
 
@@ -51,8 +50,18 @@ func (a *Alias) Compile() (string, error) {
 	}
 	return "$alias addedit " + a.Name + " " + out, nil
 }
+
+// eg. "|123|" or "|"
+var pipechar = regexp.MustCompile(`\|(\d+)\||\|`)
+
 func (ab *AliasBody) Compile(a *AliasOptions) (string, error) {
+	// Commands are strings to be piped together
 	commands := []string{}
+	if len(ab.Actions) == 0 {
+		return "", errors.New("an alias must have at least one action")
+	}
+
+	// compile actions, adding null command between them
 	for i, aa := range ab.Actions {
 		cmds, err := aa.Compile(a)
 		if err != nil {
@@ -65,20 +74,56 @@ func (ab *AliasBody) Compile(a *AliasOptions) (string, error) {
 	}
 
 	if len(commands) == 0 {
-		return "", errors.New("an alias must have at least one action")
+		return "", errors.New("an alias must be equivelent to at least one command (your alias does nothing!)")
 	}
+
+	// used in "get compiled", must output a string ready to be input to $pipe no matter what
 	if a.ForcePipeCommand && len(commands) == 1 {
 		commands = append([]string{"null"}, commands...)
 	} else if len(commands) == 1 {
 		return commands[0], nil
 	}
-	pipeChar := "|"
-	if a.RandomizePipeChar {
-		id, err := uuid.NewRandom()
-		if err != nil {
-			log.Fatal("could not generate uuid: ", err)
+
+	uniqueUsedPipeNums := make(map[int]bool)
+	// Find used pipe characters (meaning they exist anywhere in the commands)
+	// track the unique numbers they use
+	matches := pipechar.FindAllString(strings.Join(commands, " "), -1)
+	for _, v := range matches {
+		if v == "|" {
+			// -1 represents "|"
+			uniqueUsedPipeNums[-1] = true
+		} else {
+			numInChar, err := strconv.Atoi(v[1 : len(v)-1])
+			if err != nil {
+				return "", fmt.Errorf("parse int in pipe char: %w", err)
+			}
+			uniqueUsedPipeNums[numInChar] = true
 		}
-		pipeChar = id.String()[:8]
+	}
+
+	// pipe char is "|x|" where x is the lowest unused number
+	pipeChar := "|"
+	if len(uniqueUsedPipeNums) > 0 {
+		num := 0
+		usedPipeNums := make([]int, 0, len(uniqueUsedPipeNums))
+		for k := range uniqueUsedPipeNums {
+			usedPipeNums = append(usedPipeNums, k)
+		}
+
+		// find lowest missing int
+		sort.Slice(usedPipeNums, func(i, j int) bool {
+			return usedPipeNums[i] < usedPipeNums[j]
+		})
+		for i, v := range usedPipeNums {
+			// list    [-1 0 1 2]
+			// indexes [ 0 1 2 3]
+			// v should equal the index - 1, if nothing is missing
+			if v != i-1 {
+				num = usedPipeNums[i-1] + 1
+				break
+			}
+		}
+		pipeChar = "|" + fmt.Sprint(num) + "|"
 	}
 	return "pipe _char:" + pipeChar + " " + strings.Join(commands, " "+pipeChar+" "), nil
 }
@@ -111,7 +156,6 @@ func (ca *GetCompiledAction) Compile(a *AliasOptions) (commands []string, err er
 		aliasOpts := a.Copy()
 		aliasOpts.ForcePipeCommand = true
 		aliasOpts.DisallowArgLiteral = true
-		aliasOpts.RandomizePipeChar = true
 		execString, err := ca.CompilationRoot.Compile(aliasOpts)
 		if err != nil {
 			return nil, fmt.Errorf("GetCompiledAction: %w", err)
