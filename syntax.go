@@ -18,11 +18,11 @@ type Declaration struct {
 type Alias struct {
 	Name      string     `  "alias" @Ident`
 	Keyprefix *string    `[ "prefixed" @String ]`
-	Body      *AliasBody `   @@ "end"`
+	Body      *AliasBody `   @@`
 }
 
 type AliasBody struct {
-	Actions []*AliasAction `@@*`
+	Actions []*AliasAction `@@* "end"`
 }
 
 type AliasAction struct {
@@ -67,7 +67,7 @@ type JSExecAction struct {
 }
 
 type GetCompiledAction struct {
-	CompilationRoot *AliasBody       `"get" "compiled" @@ "end"`
+	CompilationRoot *AliasBody       `"get" "compiled" @@`
 	ContinueAction  *ContinuedAction `[ "->" @@ ]`
 }
 
