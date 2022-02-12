@@ -1,8 +1,8 @@
-export function lexFile (contents: string): Token[] {
+export function lexFile (filename: string, contents: string): Token[] {
 	let tokens: Token[] = []
 	let pos = 0
 	let line = 1
-	let char = 0
+	let char = 1
 	newtoken: while (pos < contents.length) {
 		let startPos = pos
 		for (let key of Object.keys(TokenRegexes)) {
@@ -12,13 +12,12 @@ export function lexFile (contents: string): Token[] {
 				let match = contents.slice(pos).match(regex)!
 				tokens.push({
 					content: match[0],
-					pos: { char, line },
+					pos: { char: char, line, filename },
 					type: tokentype
 				})
 				let lines = match[0].split("\n")
-				// line and char logic might be wrong
 				line += lines.length-1
-				char = lines.length > 1 ? lines[lines.length-1].length : char + lines[0].length
+				char = lines.length > 1 ? lines[lines.length-1].length+1 : char + lines[0].length
 				pos += match[0].length
 				// continue to the start of outer loop to keep token check priority
 				continue newtoken
@@ -32,8 +31,8 @@ export function lexFile (contents: string): Token[] {
 		}
 	}
 	tokens.push({
-		content:'',
-		pos: { line, char },
+		content: '',
+		pos: { line, char, filename },
 		type: TokenType.EOF
 	})
 	return tokens
@@ -70,5 +69,5 @@ export type Token = {
 	content: string
 }
 
-export type Position = { line: number, char: number }
+export type Position = { line: number, char: number, filename: string }
 
