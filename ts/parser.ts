@@ -18,16 +18,29 @@ export type Expectation = {
 	message: string
 }
 
+type errorInfo = {
+	error: ParsingError,
+	tokIndex: number
+}
+
 export class Parser {
+	/** Tokens representing the program */
 	tokens: Token[] = [];
+	/** expected keywords */
 	expectations: Expectation[] = [];
+	/** Filename of the source */
 	filename: string;
-	curtokIndex: any = 0;
-	// current token
+	/** Current token index (in tokens) */
+	curtokIndex: number = 0;
+	/** Stack of parsing errors and metadata */
+	errorStack: errorInfo[] = [];
+	/** Current "depth" of this.try() calls */
+	tryDepth: number = 0;
+	/** current token */
 	private tok(): Token {
 		return this.tokens[this.curtokIndex]
 	}
-	// move past the current token
+	/** move past the current token */
 	private scanTok() {
 		this.curtokIndex++
 		if (this.curtokIndex > this.tokens.length) {
@@ -36,14 +49,32 @@ export class Parser {
 	}
 	// raise an error because the current token is unexpected
 	private unexpectedToken(msg: string = ""): never {
-		console.error("Unexpected token: "+msg, this.tok())
-		if (this.tok().type === TokenType.EOF) {
-			if (this.expectations.length > 0) {
-				msg = this.expectations[this.expectations.length-1].message
+		let strtok = this.filename+ ":"+this.tok().pos.line + ":" + (this.tok().pos.char+1) + ": unexpected token " + this.tok().type + (this.tok().content === "" ? "" : "("+this.tok().content+")") + ": "
+		console.error(strtok+msg)
+
+		let err = (()=>{
+			if (this.tok().type === TokenType.EOF) {
+				if (this.expectations.length > 0) {
+					msg = this.expectations[this.expectations.length-1].message
+				}
+				return new ParsingError("unexpected EOF: " + msg)
 			}
-			throw new ParsingError("unexpected EOF: " + msg)
+			return new ParsingError(strtok+  msg)
+		})()
+
+		this.errorStack.push({
+			error: err,
+			tokIndex: this.curtokIndex
+		})
+
+		if (this.tryDepth == 0) {
+			// calculate the error that accepted the most tokens
+			throw this.errorStack.reduce((l, r): errorInfo => {
+				return l.tokIndex > r.tokIndex ? l : r
+			}).error
 		}
-		throw new ParsingError("unexpected token: " + msg)
+
+		throw err
 	}
 	// Try the callback, if it fails due to a parsing error (other errors are re-thrown)
 	// roll back the token index and return false,
@@ -51,12 +82,17 @@ export class Parser {
 	private try(cb: () => void): boolean {
 		let startTokIndex = this.curtokIndex
 		try {
+			this.tryDepth++
 			cb()
+			this.tryDepth--
 			return true
 		} catch (e) {
+			this.tryDepth--
 			if (!(e instanceof ParsingError)) {
 				throw e
 			}
+
+			// reset token pointer
 			this.curtokIndex = startTokIndex
 			return false
 		}
@@ -150,13 +186,18 @@ export class Parser {
 	private parseDeclaration(): Declaration | never {
 		let decl: Partial<Declaration> = { Pos: this.tok().pos }
 
-		if (this.scanKeyword("entry")) {
-			decl.Entrypoint = this.getIdent()
+		if (this.try(()=>{
+			if (this.scanKeyword("entry")) {
+				decl.Entrypoint = this.getIdent()
+			} else {
+				decl.Alias = this.parseAlias()
+			}
+		})) {
+			return decl as Declaration
 		} else {
-			decl.Alias = this.parseAlias()
+			this.unexpectedToken('expected Declaration ("entry", or "alias")')
 		}
 
-		return decl as Declaration
 	}
 
 	private scanKeyword(keyword: string): boolean {
@@ -217,35 +258,22 @@ export class Parser {
 	private parseExecuteAction(): ExecuteAction | never {
 		let execAction: Partial<ExecuteAction> = {}
 
-		let startTokIndex = this.curtokIndex;
-		try {
+		this.try(()=>{
 			this.expectations.push({
 				keyword: "->",
 				message: "expected Keyword \"->\" (previous action must be chained)"
 			})
 			execAction.RetrieveAction = this.parseRetrieveAction()
-		} catch (e) {
-			if (!(e instanceof ParsingError)) {
-				throw e
-			}
-			this.curtokIndex = startTokIndex
-		}
+		})
 		if ((execAction.RetrieveAction && !this.scanKeyword("->")) || this.expectations.pop()?.keyword != "->") {
 			this.unexpectedToken("expected \"->\"")
 		}
 
 		execAction.SimpleAction = this.parseExecuteActionSimple()
-
-		startTokIndex = this.curtokIndex;
-		try {
+		this.try(()=>{
 			if (this.scanKeyword("->"))
 				execAction.ContinueAction = this.parseContinuedAction()
-		} catch (e) {
-			if (!(e instanceof ParsingError)) {
-				throw e
-			}
-			this.curtokIndex = startTokIndex
-		}
+		})
 
 		return execAction as ExecuteAction
 	}
@@ -268,23 +296,27 @@ export class Parser {
 	}
 	private parseExecuteActionSimple(): ExecuteActionSimple | never {
 		let ret: Partial<ExecuteActionSimple> = {}
-		if (this.scanKeyword("js")) {
-			ret.JSExec = this.parseJSExecAction()
-			return ret as ExecuteActionSimple
-		} else if (this.scanKeyword("exec") || this.scanKeyword("pipe")) {
-			ret.PipeCommandLiterals = []
-			ret.PipeCommandLiterals.push(this.getString())
-			while (this.scanKeyword("|")) {
+		if (this.try(()=>{
+			if (this.scanKeyword("js")) {
+				ret.JSExec = this.parseJSExecAction()
+			} else if (this.scanKeyword("exec") || this.scanKeyword("pipe")) {
+				ret.PipeCommandLiterals = []
 				ret.PipeCommandLiterals.push(this.getString())
+				while (this.scanKeyword("|")) {
+					ret.PipeCommandLiterals.push(this.getString())
+				}
+			} else if (this.scanKeyword("say")) {
+				ret.UseSayLiteral = true
+				if (this.tok().type === TokenType.String) {
+					ret.SayLiteral = this.getString()
+				}
+			} else {
+				ret.CallAlias = this.parseCallAliasAction()
 			}
-			return ret as ExecuteActionSimple
-		} else if (this.scanKeyword("say")) {
-			ret.UseSayLiteral = true
-			ret.SayLiteral = this.getString()
+		})) {
 			return ret as ExecuteActionSimple
 		} else {
-			ret.CallAlias = this.parseCallAliasAction()
-			return ret as ExecuteActionSimple
+			this.unexpectedToken('expected ExecuteActionSimple ("js", "exec", "pipe", "say", or "call")')
 		}
 	}
 	private parseCallAliasAction(): CallAliasAction | undefined {
