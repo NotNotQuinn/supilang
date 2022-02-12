@@ -1,0 +1,26 @@
+{
+  "name": "supilang",
+  "version": "1.0.0",
+  "description": "Supibot Language (SBL), is a language that compiles to supibot aliases. I created it because I was having a hard time writing aliases in a linear string, and they were getting too long to manage on my own (>1k characters, which was <50 lines in SBL).",
+  "main": "index.js",
+  "directories": {
+    "example": "examples"
+  },
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/NotNotQuinn/supilang.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "bugs": {
+    "url": "https://github.com/NotNotQuinn/supilang/issues"
+  },
+  "homepage": "https://github.com/NotNotQuinn/supilang#readme",
+  "devDependencies": {
+    "@types/node": "^17.0.17"
+  }
+}
