@@ -1,16 +1,4 @@
 export function lexFile (contents: string): Token[] {
-	//	var aliasLexer = lexer.MustSimple([]lexer.Rule{
-	//		// identifiers can "overwrite" keywords, otherwise keywords are priorotized
-	//		{`Ident`, `[-a-zA-Z_0-9]{2,30}`, nil},
-	//		{`Keyword`, `alias|end|\||exec|pipe|->|prefixed|say|get|compiled|call|say|entry`, nil},
-	//		{`User`, `@[-a-zA-Z_0-9]*`, nil},
-	//		{`ArgLiteral`, `\${(\d+\+?|-?\d+|-?\d+\.\.(-?\d+)?|\d+-\d+|executor|channel)}`, nil},
-	//		{`JSExecString`, `(\x60{3})(?:\\.|[^\x60])*(\x60{3})`, nil},
-	//		// {`Word`, `[a-zA-Z_][a-zA-Z0-9_]`, nil},
-	//		{`String`, `"(?:\\.|[^"])*"`, nil},
-	//		{"comment", `#[^\n]*`, nil},
-	//		{"whitespace", `\s+`, nil},
-	//	})
 	let tokens: Token[] = []
 	let pos = 0
 	let line = 1
@@ -28,6 +16,7 @@ export function lexFile (contents: string): Token[] {
 					type: tokentype
 				})
 				let lines = match[0].split("\n")
+				// line and char logic might be wrong
 				line += lines.length-1
 				char = lines.length > 1 ? lines[lines.length-1].length : char + lines[0].length
 				pos += match[0].length
@@ -64,9 +53,9 @@ export enum TokenType {
 
 const TokenRegexes: { [key in keyof typeof TokenType]: RegExp }  = {
 	// Tokens are prioritized in this order
-	Keyword: new RegExp("^(\\b(alias|end|\\||exec|pipe|prefixed|js|say|get|set|compiled|call|say|entry)\\b|->)"),
+	Keyword: new RegExp("^(\\b(alias|end|exec|pipe|prefixed|js|say|get|set|compiled|call|say|entry)\\b|\\||->)"),
 	Ident: new RegExp("^([-a-zA-Z_0-9]{2,30})"),
-	User: new RegExp("^(@[-a-zA-Z_0-9]*)"),
+	User: new RegExp("^(@[-a-zA-Z_0-9]+)"),
 	ArgLiteral: new RegExp("^(\\${(\\d+\\+?|-?\\d+|-?\\d+\\.\\.(-?\\d+)?|\\d+-\\d+|executor|channel)})"),
 	JSExecString: new RegExp("^((\\x60{3})(?:\\\\.|[^\\x60])*(\\x60{3}))"),
 	String: new RegExp("^(\"(?:\\\\.|[^\"])*\")"),
