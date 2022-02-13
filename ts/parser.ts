@@ -210,7 +210,7 @@ export class Parser {
 	}
 
 	private parseAlias(): Alias | never {
-		let alias: Partial<Alias> = {}
+		let alias: Partial<Alias> = { Pos: this.tok().pos }
 		if (!this.scanKeyword("alias")) {
 			this.unexpectedToken("expected Keyword \"alias\"")
 		}
@@ -223,7 +223,7 @@ export class Parser {
 	}
 
 	private parseAliasBody(): AliasBody | never {
-		let aliasbody: AliasBody = { Actions: [] }
+		let aliasbody: AliasBody = { Actions: [], Pos: this.tok().pos }
 		this.expectations.push({
 			keyword: "end",
 			message: "expected Keyword \"end\" or an Action"
@@ -239,7 +239,7 @@ export class Parser {
 		return aliasbody
 	}
 	private parseAliasAction(): AliasAction {
-		let aliasaction: Partial<AliasAction> = {}
+		let aliasaction: Partial<AliasAction> = { Pos: this.tok().pos }
 
 		if (this.try(()=>{
 			aliasaction.ExecuteAction = this.parseExecuteAction()
@@ -256,7 +256,7 @@ export class Parser {
 		this.unexpectedToken("expected Action or \"end\"")
 	}
 	private parseExecuteAction(): ExecuteAction | never {
-		let execAction: Partial<ExecuteAction> = {}
+		let execAction: Partial<ExecuteAction> = { Pos: this.tok().pos }
 
 		this.try(()=>{
 			this.expectations.push({
@@ -278,7 +278,7 @@ export class Parser {
 		return execAction as ExecuteAction
 	}
 	private parseContinuedAction(): ContinuedAction | never {
-		let ret: Partial<ContinuedAction> = {}
+		let ret: Partial<ContinuedAction> = { Pos: this.tok().pos }
 
 		if (this.scanKeyword("set")) {
 			if (this.scanKeyword("local")) {
@@ -295,7 +295,7 @@ export class Parser {
 		}
 	}
 	private parseExecuteActionSimple(): ExecuteActionSimple | never {
-		let ret: Partial<ExecuteActionSimple> = {}
+		let ret: Partial<ExecuteActionSimple> = { Pos: this.tok().pos }
 		if (this.try(()=>{
 			if (this.scanKeyword("js")) {
 				ret.JSExec = this.parseJSExecAction()
@@ -319,8 +319,8 @@ export class Parser {
 			this.unexpectedToken('expected ExecuteActionSimple ("js", "exec", "pipe", "say", or "call")')
 		}
 	}
-	private parseCallAliasAction(): CallAliasAction | undefined {
-		let ret: Partial<CallAliasAction> = {}
+	private parseCallAliasAction(): CallAliasAction | never {
+		let ret: Partial<CallAliasAction> = { Pos: this.tok().pos }
 
 		if (!this.scanKeyword("call")) {
 			this.unexpectedToken("expected Keyword \"call\"")
@@ -332,7 +332,7 @@ export class Parser {
 		ret.AliasName = this.getIdent()
 		return ret as CallAliasAction
 	}
-	private parseJSExecAction(): JSExecAction | undefined {
+	private parseJSExecAction(): JSExecAction | never {
 		let ret: Partial<JSExecAction> = { Pos: this.tok().pos }
 		ret.ExecString = this.getJSExecString()
 		return ret as JSExecAction
@@ -351,7 +351,7 @@ export class Parser {
 		}
 	}
 	private parseGetCompiledAction(): GetCompiledAction | never {
-		let ret: Partial<GetCompiledAction> = {}
+		let ret: Partial<GetCompiledAction> = { Pos: this.tok().pos }
 		if (!(this.scanKeyword("get") && this.scanKeyword("compiled"))) {
 			this.unexpectedToken("expected Keywords \"get\" \"compiled\"")
 		}
