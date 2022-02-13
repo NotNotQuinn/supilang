@@ -1,5 +1,6 @@
-import { lexFile, TokenType, Token } from './lexer';
-import { SBLFile, Declaration, Alias, 
+import type { Token } from './lexer';
+import { lexFile, TokenType } from './lexer';
+import type { SBLFile, Declaration, Alias, 
 	AliasBody, AliasAction, ExecuteAction, 
 	GetCompiledAction, RetrieveAction, 
 	ExecuteActionSimple, ContinuedAction, 

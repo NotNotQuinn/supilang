@@ -1,9 +1,10 @@
-#!/usr/bin/env node
 // entry for debugging
 import * as fs from "fs";
 import { Parser } from './parser';
 import { inspect } from 'util'
 import { Compile } from './compile';
+// @ts-ignore not running inside supibot
+globalThis["SUPIBOT"] = false
 function main() {
 	let filename: string;
 	if (process.argv.length > 2) {
