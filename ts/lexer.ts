@@ -2,7 +2,7 @@ export function lexFile (filename: string, contents: string): Token[] {
 	let tokens: Token[] = []
 	let pos = 0
 	let line = 1
-	let char = 1
+	let col = 1
 	newtoken: while (pos < contents.length) {
 		let startPos = pos
 		for (let key of Object.keys(TokenRegexes)) {
@@ -12,12 +12,12 @@ export function lexFile (filename: string, contents: string): Token[] {
 				let match = contents.slice(pos).match(regex)!
 				tokens.push({
 					content: match[0],
-					pos: { char: char, line, filename },
+					pos: { col, line, filename },
 					type: tokentype
 				})
 				let lines = match[0].split("\n")
 				line += lines.length-1
-				char = lines.length > 1 ? lines[lines.length-1].length+1 : char + lines[0].length
+				col = lines.length > 1 ? lines[lines.length-1].length+1 : col + lines[0].length
 				pos += match[0].length
 				// continue to the start of outer loop to keep token check priority
 				continue newtoken
@@ -26,13 +26,13 @@ export function lexFile (filename: string, contents: string): Token[] {
 		if (pos === startPos) {
 			// nothing matched
 			console.log(tokens)
-			console.error("Invalid input text", { char, line })
+			console.error("Invalid input text", { char: col, line })
 			process.exit(1)
 		}
 	}
 	tokens.push({
 		content: '',
-		pos: { line, char, filename },
+		pos: { line, col: col, filename },
 		type: TokenType.EOF
 	})
 	return tokens
@@ -69,5 +69,5 @@ export type Token = {
 	content: string
 }
 
-export type Position = { line: number, char: number, filename: string }
+export type Position = { line: number, col: number, filename: string }
 

@@ -49,7 +49,7 @@ export class Parser {
 	}
 	// raise an error because the current token is unexpected
 	private unexpectedToken(msg: string = ""): never {
-		let strtok = this.filename+ ":"+this.tok().pos.line + ":" + this.tok().pos.char + ": unexpected token " + this.tok().type + (this.tok().content === "" ? "" : "("+this.tok().content+")") + ": "
+		let strtok = this.filename+ ":"+this.tok().pos.line + ":" + this.tok().pos.col + ": unexpected token " + this.tok().type + (this.tok().content === "" ? "" : "("+this.tok().content+")") + ": "
 		console.error(strtok+msg)
 
 		let err = (()=>{
