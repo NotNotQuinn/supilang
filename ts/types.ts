@@ -42,10 +42,10 @@ export type AliasBody = {
 // implemented
 export type AliasAction = {
 	Pos: Position
-	ExecuteAction: ExecuteAction
+	ExecuteAction?: ExecuteAction
 } & {
 	Pos: Position
-	GetCompiledAction: GetCompiledAction
+	GetCompiledAction?: GetCompiledAction
 }
 
 // Execute a command, storing the output for later use
@@ -60,21 +60,21 @@ export type ExecuteAction = {
 // implemented
 export type RetrieveAction = {
 	Pos: Position
-	LocalRetrieveKey: boolean
-	RetrieveKey: string
+	LocalRetrieveKey?: boolean
+	RetrieveKey?: string
 } & {
 	Pos: Position
-	RetrieveArgs: string
+	RetrieveArgs?: string
 }
 
 // implemented
 export type ContinuedAction = {
 	Pos: Position
-	StoreKeyLocal: boolean
-	StoreKey: string
+	StoreKeyLocal?: boolean
+	StoreKey?: string
 } & {
 	Pos: Position
-	NextAction: ExecuteActionSimple
+	NextAction?: ExecuteActionSimple
 	SecondContinue?: ContinuedAction
 }
 
@@ -83,20 +83,20 @@ export type ContinuedAction = {
 export type ExecuteActionSimple = {
 	// ?Pos                 lexer.Position
 	Pos: Position
-	JSExec: JSExecAction
+	JSExec?: JSExecAction
 } & {
 	// ?Pos                 lexer.Position
 	Pos: Position
-	PipeCommandLiterals: string[]
+	PipeCommandLiterals?: string[]
 } & {
 	// ?Pos                 lexer.Position
 	Pos: Position
-	UseSayLiteral: true
+	UseSayLiteral?: true
 	SayLiteral?: string
 } & {
 	// ?Pos                 lexer.Position
 	Pos: Position
-	CallAlias: CallAliasAction
+	CallAlias?: CallAliasAction
 }
 
 // implemented
