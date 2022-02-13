@@ -1,11 +1,13 @@
-import { SBLFile, Alias, AliasOptions, 
+import type { SBLFile, Alias, AliasOptions, 
 	GetCompiledAction, AliasBody, 
 	AliasAction, ExecuteAction, RetrieveAction, 
 	ExecuteActionSimple, ContinuedAction, 
 	JSExecAction, CallAliasAction 
 } from './types';
-import { Position } from './lexer';
-import * as ugly from 'uglify-js';
+import type { Position } from './lexer';
+// @ts-ignore xd no type definitions
+import * as chiffon from 'chiffon';
+
 
 function getOptions(alias: Alias): AliasOptions {
 	let keyprefix = ""
@@ -257,7 +259,7 @@ function CompileContinuedAction(ca: ContinuedAction, a: AliasOptions): string[] 
 	return commands
 }
 
-function CompileCallAliasAction(ca: CallAliasAction, a: AliasOptions): string[] {
+function CompileCallAliasAction(ca: CallAliasAction, _a: AliasOptions): string[] {
 	if (typeof ca.User !== "undefined") {
 		return [`alias try ` + ca.User + ` ` + ca.AliasName]
 	} else {
@@ -271,75 +273,43 @@ function CompileJSExecAction(jsa: JSExecAction, a: AliasOptions): string[] {
 
 	let escapedKeyprefix = a.Keyprefix.replace(/"/g, `\\"`)
 	escapedKeyprefix = escapedKeyprefix.replace(/\n/g, "\\n")
-	let injectedRuntime = `
+	let injectedRuntimeFuncs = {
+		getLocal: `
 		// get the local value for the key
 		function getLocal(key) {
 			return customData.get("` + escapedKeyprefix + `"+key)
-		}
+		}`,
+		setLocal: `
 		// set the local value for the key
 		function setLocal(key, value) {
 			return customData.set("` + escapedKeyprefix + `"+key, value)
-		}
+		}`,
+		getLocalPrefix: `
 		// get the local key prefix
 		function getLocalPrefix() {
 			return "` + escapedKeyprefix + `"
-		}
-	` + `;`
+		}`,
+	};
+
+	let injectedRuntime = "";
+
+	for (const func in injectedRuntimeFuncs) {
+		if ((new RegExp(`\\b${func}\\b`).test(unescapedCode))) 
+			injectedRuntime+=injectedRuntimeFuncs[func as keyof typeof injectedRuntimeFuncs]
+	}
 
 	let inputCode = injectedRuntime + unescapedCode
 
-	// ~~ somehow ~~ minify the javascript and perform tree shaking
-	// using: uglify-js
-	let res = ugly.minify({
-		"alias.js": inputCode
-	}, {
-		warnings: "verbose",
-		output: {
-			ascii_only: true,
-			max_line_len: Infinity,
-		},
-		parse: {
-			shebang: false,
-			html5_comments: false,
-			bare_returns: true
-		},
-		compress: {
-			keep_fnames: true,
-			toplevel: true,
-		}
+	// minify the javascript and perform tree shaking
+	// using: chiffon (everything else is WAY too big to be loaded into supibot)
+	// This only parses the javascript, it doesnt even validate syntax, just parses it and
+	// un-parses the AST
+	let res = chiffon.minify(inputCode, {
+		// ....this is the ONLY option
+		maxLineLen: Infinity
 	})
-	console.log(res)
 
-	if (res.error) {
-		type uglyPos = { line: number, col: number, pos: number, filename: string }
-		let locationToString = function(l: Position, l2: uglyPos) {
-			// calculate the actual locaiton of l2 in our source file
-			// based on where the js token started
-			var loc: Position = {} as Position
-			let injectedLines = injectedRuntime.split("\n")
-			let ErrorLineText = inputCode.split("\n")[l2.line-1] || ""
-			// If its the first line of where the user wrote....
-			if (l2.line-injectedLines.length+1 == 1) {
-				let lenLastInjectedLine = (injectedLines[(injectedLines.length)-1]).length
-				loc.col =
-					//  text within source file, before js starts
-					l.col + "```".length +
-						//  text written after the backtics
-						(l2.col - lenLastInjectedLine) +
-						//  offset for escaping the backtic character with backslash
-						(ErrorLineText.slice(lenLastInjectedLine).match(/`/g) || []).length
-			} else {
-				// add one for every backtic, because those are written as "\`"
-				loc.col = l2.col + 1 + (ErrorLineText.match(/`/g) || []).length
-			}
-			loc.filename = l.filename
-			loc.line = l.line + l2.line - injectedLines.length
-			return loc.filename + ":" + loc.line + ":" + loc.col
-		}
-		throw new Error(`${locationToString(jsa.Pos, res.error as unknown as uglyPos)}: `+res.error.message)
-	}
-
-	let minifiedCode = `(()=>{`+res.code+`})();`
+	let minifiedCode = `(()=>{`+res+`})();`
 
 	let escapedMinifedCode = minifiedCode.replace(/\\/g, `\\\\`)
 	escapedMinifedCode = escapedMinifedCode.replace(/"/g, `\\"`)
