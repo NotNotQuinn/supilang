@@ -1,4 +1,4 @@
-#entry JSArgs
+entry JSArgs
 
 # There is a special syntax for $js, because escaping quotes is annoying
 alias usingJS
