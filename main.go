@@ -185,8 +185,9 @@ func (ca *GetCompiledAction) Compile(a *AliasOptions) (commands []string, err er
 			ca.ContinueAction.StoreKeyLocal = false
 			escapedKey := strings.Replace(key, `"`, `\\"`, -1)
 			commands = append(commands, "js "+errInfo+"function:\" customData.set(\\\""+escapedKey+"\\\",'"+escapedString+"') \"")
+		} else {
+			commands = append(commands, "js "+errInfo+"function:\" '"+escapedString+"' \"")
 		}
-		commands = append(commands, "js "+errInfo+"function:\" '"+escapedString+"' \"")
 	}
 	if ca.ContinueAction != nil {
 		cmds, err := ca.ContinueAction.Compile(a)
@@ -197,24 +198,24 @@ func (ca *GetCompiledAction) Compile(a *AliasOptions) (commands []string, err er
 	}
 	return
 }
-func (aa *ExecuteAction) Compile(a *AliasOptions) ([]string, error) {
+func (ea *ExecuteAction) Compile(a *AliasOptions) ([]string, error) {
 	commands := []string{}
-	if aa.RetrieveAction != nil {
-		cmds, err := aa.RetrieveAction.Compile(a)
+	if ea.RetrieveAction != nil {
+		cmds, err := ea.RetrieveAction.Compile(a)
 		if err != nil {
 			return nil, fmt.Errorf("ExecuteAction: %w", err)
 		}
 		commands = append(commands, cmds...)
 	}
-	if aa.SimpleAction != nil {
-		out, err := aa.SimpleAction.Compile(a)
+	if ea.SimpleAction != nil {
+		out, err := ea.SimpleAction.Compile(a)
 		if err != nil {
 			return nil, fmt.Errorf("ExecuteAction: %w", err)
 		}
 		commands = append(commands, out...)
 	}
-	if aa.ContinueAction != nil {
-		out, err := aa.ContinueAction.Compile(a)
+	if ea.ContinueAction != nil {
+		out, err := ea.ContinueAction.Compile(a)
 		if err != nil {
 			return nil, fmt.Errorf("ExecuteAction: %w", err)
 		}
