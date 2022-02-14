@@ -1,6 +1,7 @@
 out.alias
 out.alias.2
 build.js
+build/
 test.sbl
 something.sbl
 workspace.code-workspace

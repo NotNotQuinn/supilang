@@ -9,10 +9,10 @@ import type { SBLFile, Declaration, Alias,
 
 // Error thrown when parsing couldnt be done correctly,
 // NOT all errors from the parser are this type of error
-export class ParsingError extends Error {}
+export class ParserError extends Error {}
 
 // internal parser expectation
-export type Expectation = {
+type Expectation = {
 	// expected keyword
 	keyword: string
 	// error message
@@ -20,7 +20,7 @@ export type Expectation = {
 }
 
 type errorInfo = {
-	error: ParsingError,
+	error: ParserError,
 	tokIndex: number
 }
 
@@ -58,9 +58,9 @@ export class Parser {
 				if (this.expectations.length > 0) {
 					msg = this.expectations[this.expectations.length-1].message
 				}
-				return new ParsingError("unexpected EOF: " + msg)
+				return new ParserError("unexpected EOF: " + msg)
 			}
-			return new ParsingError(strtok+  msg)
+			return new ParserError(strtok+  msg)
 		})()
 
 		this.errorStack.push({
@@ -89,7 +89,7 @@ export class Parser {
 			return true
 		} catch (e) {
 			this.tryDepth--
-			if (!(e instanceof ParsingError)) {
+			if (!(e instanceof ParserError)) {
 				throw e
 			}
 

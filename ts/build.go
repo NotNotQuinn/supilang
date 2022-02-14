@@ -8,7 +8,27 @@ import (
 	esbuild "github.com/evanw/esbuild/pkg/api"
 )
 
+type Spec struct {
+	Infile, Outfile string
+}
+
 func main() {
+	specs := []Spec{
+		{
+			Infile:  "./ts/exports/parser.ts",
+			Outfile: "./build/parser.js",
+		},
+		{
+			Infile:  "./ts/exports/compiler.ts",
+			Outfile: "./build/compiler.js",
+		},
+	}
+	for _, s := range specs {
+		generateFile(s)
+	}
+}
+
+func generateFile(s Spec) {
 	res := esbuild.Build(esbuild.BuildOptions{
 		Bundle:            true,
 		MinifyWhitespace:  true,
@@ -16,8 +36,8 @@ func main() {
 		MinifyIdentifiers: true,
 		Write:             true,
 		Define:            map[string]string{"SUPIBOT": "true"},
-		EntryPoints:       []string{"./ts/aliasEntry.ts"},
-		Outfile:           "./build.js",
+		EntryPoints:       []string{s.Infile},
+		Outfile:           s.Outfile,
 		Tsconfig:          "./tsconfig.build.json",
 		GlobalName:        "sbl",
 		Drop:              esbuild.DropConsole,

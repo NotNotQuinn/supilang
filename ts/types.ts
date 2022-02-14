@@ -1,4 +1,4 @@
-import { Position } from './lexer';
+import type { Position } from './lexer';
 // Compileable 
 
 // options passed to compile
