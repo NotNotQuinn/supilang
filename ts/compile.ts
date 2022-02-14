@@ -269,7 +269,7 @@ function CompileCallAliasAction(ca: CallAliasAction, _a: AliasOptions): string[]
 
 function CompileJSExecAction(jsa: JSExecAction, a: AliasOptions): string[] {
 	// unescaping is done in parsing step
-	let unescapedCode = jsa.ExecString
+	let unescapedCode = jsa.ExecString.RawString
 
 	let escapedKeyprefix = a.Keyprefix.replace(/"/g, `\\"`)
 	escapedKeyprefix = escapedKeyprefix.replace(/\n/g, "\\n")
@@ -319,5 +319,15 @@ function CompileJSExecAction(jsa: JSExecAction, a: AliasOptions): string[] {
 	if (a.JSForceErrorInfo) {
 		errInfo = "errorInfo:true "
 	}
-	return ["js "+ errInfo+ "function:\"" + escapedMinifedCode + "\""]
+	let importGist = ""
+	if (typeof jsa.ImportedGist !== "undefined") {
+		if (!jsa.ImportedGist.match(/^[0-9a-fA-F]*$/)) {
+			throw new CompilerError(jsa.Pos, "gist ids can only contain hexadecimal characters (0123456789abcdefABCDEF)")
+		}
+		if (jsa.ImportedGist === "") {
+			throw new CompilerError(jsa.Pos, "a gist id cannot be the empty string")
+		}
+		importGist = "importGist:"+jsa.ImportedGist+" "
+	}
+	return ["js "+ errInfo + importGist + "function:\"" + escapedMinifedCode + "\""]
 }

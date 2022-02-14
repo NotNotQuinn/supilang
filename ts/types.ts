@@ -102,7 +102,13 @@ export type ExecuteActionSimple = {
 // implemented
 export type JSExecAction = {
 	Pos: Position
-	ExecString: string
+	ImportedGist?: string
+	ExecString: JSExecString
+}
+
+export type JSExecString = {
+	Pos: Position
+	RawString: string
 }
 
 export type GetCompiledAction = {

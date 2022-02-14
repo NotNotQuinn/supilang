@@ -55,7 +55,7 @@ export enum TokenType {
 
 const TokenRegexes: { [key in keyof typeof TokenType]: RegExp }  = {
 	// Tokens are prioritized in this order
-	Keyword: new RegExp("^(\\b(alias|local|end|exec|pipe|prefixed|js|say|get|set|compiled|call|say|entry)\\b|\\||->)"),
+	Keyword: new RegExp("^(\\b(alias|import|local|end|exec|pipe|prefixed|js|say|get|set|compiled|call|say|entry)\\b|\\||->)"),
 	Ident: new RegExp("^([-a-zA-Z_0-9]{2,30})"),
 	User: new RegExp("^(@[-a-zA-Z_0-9]+)"),
 	ArgLiteral: new RegExp("^(\\${(\\d+\\+?|-?\\d+|-?\\d+\\.\\.(-?\\d+)?|\\d+-\\d+|executor|channel)})"),

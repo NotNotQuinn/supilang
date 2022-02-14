@@ -1,5 +1,6 @@
 import type { Token } from './lexer';
 import { lexFile, TokenType } from './lexer';
+import { JSExecString } from './types';
 import type { SBLFile, Declaration, Alias, 
 	AliasBody, AliasAction, ExecuteAction, 
 	GetCompiledAction, RetrieveAction, 
@@ -335,8 +336,18 @@ export class Parser {
 	}
 	private parseJSExecAction(): JSExecAction | never {
 		let ret: Partial<JSExecAction> = { Pos: this.tok().pos }
-		ret.ExecString = this.getJSExecString()
+
+		if (this.scanKeyword("import")) {
+			ret.ImportedGist = this.getString()
+		}
+
+		ret.ExecString = this.parseJSExecString()
 		return ret as JSExecAction
+	}
+	private parseJSExecString(): JSExecString {
+		let ret: Partial<JSExecString> = { Pos: this.tok().pos }
+		ret.RawString = this.getJSExecString()
+		return ret as JSExecString
 	}
 	private parseRetrieveAction(): RetrieveAction | never {
 		let retAction: Partial<RetrieveAction> = { Pos: this.tok().pos }
