@@ -303,7 +303,7 @@ func (ea *ExecuteActionSimple) Compile(a *AliasOptions) ([]string, error) {
 }
 func (jsa *JSExecAction) Compile(a *AliasOptions) ([]string, error) {
 	// Unescape backtics from our parsing
-	unescapedJSCode := strings.Replace(jsa.ExecString, "\\`", "`", -1)
+	unescapedJSCode := strings.Replace(jsa.ExecString.RawString, "\\`", "`", -1)
 
 	escapedKeyprefix := strings.Replace(a.Keyprefix, `"`, `\"`, -1)
 	escapedKeyprefix = strings.Replace(escapedKeyprefix, "\n", "\\n", -1)
@@ -360,15 +360,15 @@ func (jsa *JSExecAction) Compile(a *AliasOptions) ([]string, error) {
 			return loc.String()
 		}
 		for _, m := range res.Warnings {
-			log.Printf("Minify JS (warning): %s: %s\n", locationToString(jsa.Pos, *m.Location), m.Text)
+			log.Printf("Minify JS (warning): %s: %s\n", locationToString(jsa.ExecString.Pos, *m.Location), m.Text)
 			for _, n := range m.Notes {
-				log.Printf("Minify JS (warning): %s: Note: %s\n", locationToString(jsa.Pos, *n.Location), n.Text)
+				log.Printf("Minify JS (warning): %s: Note: %s\n", locationToString(jsa.ExecString.Pos, *n.Location), n.Text)
 			}
 		}
 		for _, m := range res.Errors {
-			log.Printf("Minify JS: %s: %s\n", locationToString(jsa.Pos, *m.Location), m.Text)
+			log.Printf("Minify JS: %s: %s\n", locationToString(jsa.ExecString.Pos, *m.Location), m.Text)
 			for _, n := range m.Notes {
-				log.Printf("Minify JS: %s: Note: %s\n", locationToString(jsa.Pos, *n.Location), n.Text)
+				log.Printf("Minify JS: %s: Note: %s\n", locationToString(jsa.ExecString.Pos, *n.Location), n.Text)
 			}
 		}
 		if len(res.Errors) > 0 {
@@ -389,7 +389,20 @@ func (jsa *JSExecAction) Compile(a *AliasOptions) ([]string, error) {
 	if a.JSForceErrorInfo {
 		errInfo = "errorInfo:true "
 	}
-	return []string{"js " + errInfo + "function:\"" + escapedMinifiedCode + "\""}, nil
+	importGist := ""
+	if jsa.ImportedGist != nil {
+		if match, err := regexp.MatchString("^[0-9a-fA-F]*$", *jsa.ImportedGist); !match || err != nil {
+			if err != nil {
+				return nil, err
+			}
+			return nil, participle.Errorf(jsa.Pos, "gist ids can only contain hexadecimal characters (0123456789abcdefABCDEF)")
+		}
+		if *jsa.ImportedGist == "" {
+			return nil, participle.Errorf(jsa.Pos, "a gist id cannot be the empty string")
+		}
+		importGist = "importGist:" + *jsa.ImportedGist + " "
+	}
+	return []string{"js " + errInfo + importGist + "function:\"" + escapedMinifiedCode + "\""}, nil
 }
 func (ca *CallAliasAction) Compile(a *AliasOptions) ([]string, error) {
 	if ca.User != nil {

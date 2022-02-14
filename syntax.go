@@ -62,8 +62,14 @@ type ExecuteActionSimple struct {
 }
 
 type JSExecAction struct {
-	Pos        lexer.Position
-	ExecString string `@JSExecString`
+	Pos          lexer.Position
+	ImportedGist *string      `[ "import" @String ]`
+	ExecString   JSExecString `@@`
+}
+
+type JSExecString struct {
+	Pos       lexer.Position
+	RawString string `@JSExecString`
 }
 
 type GetCompiledAction struct {
@@ -80,7 +86,7 @@ type CallAliasAction struct {
 var aliasLexer = lexer.MustSimple([]lexer.Rule{
 	// identifiers can "overwrite" keywords, otherwise keywords are priorotized
 	{`Ident`, `[-a-zA-Z_0-9]{2,30}`, nil},
-	{`Keyword`, `alias|end|\||exec|pipe|->|prefixed|say|get|compiled|call|say|entry`, nil},
+	{`Keyword`, `alias|import|local|end|exec|pipe|prefixed|js|say|get|set|compiled|call|say|entry|\||->`, nil},
 	{`User`, `@[-a-zA-Z_0-9]*`, nil},
 	{`ArgLiteral`, `\${(\d+\+?|-?\d+|-?\d+\.\.(-?\d+)?|\d+-\d+|executor|channel)}`, nil},
 	{`JSExecString`, `(\x60{3})(?:\\.|[^\x60])*(\x60{3})`, nil},
