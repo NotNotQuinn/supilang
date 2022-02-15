@@ -1,0 +1,95 @@
+# Aggregate alias for dealing with sbl
+
+# Subcommands: comp (compile), ast (dump ast to hastebin), alias (proxy for alias command)
+
+alias sbl prefixed "sbl-alias-"
+	# Compile input into an alias
+	get compiled
+		js import "dc9270caa4310b309f89a928c58d3506" ```
+			let text = sbl.Compile(new sbl.Parser("aliasxd.sbl", getLocal("userinput")).getAST())
+			setLocal("message", text)
+			setLocal("message-prefix", "Compiled alias: ")
+			return getLocal("post-message")
+		``` -> exec "pipe"
+	end -> set local temp "compile"
+
+	# Post a message to chat - if it overflows use hastebin
+	get compiled
+		js ```
+			let completeMessage = getLocal("message-prefix") +" "+ getLocal("message")
+			if (completeMessage.length > 497) {
+				return getLocal("post-message-hastebin")
+			}
+			return getLocal("post-message-raw")
+		``` -> exec "pipe"
+	end -> set local "post-message"
+
+	# Post message as a string
+	get compiled
+		js ```
+			return getLocal("message-prefix") +" "+ getLocal("message")
+		```
+	end -> set local "post-message-raw"
+
+	# Post message to hastebin
+	get compiled
+		get local "message" -> exec "hbp" -> js ```
+			return getLocal("message-prefix") +" "+ args.join(" ")
+		```
+	end -> set local "post-message-hastebin"
+
+	# Dump input parsed into an AST
+	get compiled
+		js import "dc9270caa4310b309f89a928c58d3506" ```
+			let ast = new sbl.Parser("ast.sbl", getLocal("userinput")).getAST()
+			return JSON.stringify(ast, null, "\t")
+		``` -> exec "hbp" -> say "AST for your input: "
+	end -> set local "dump-ast"
+
+	# Set the help text
+	say "To compile an alias use $$sbl compile <sbl code>; To dump an alias' Abstract Syntax Tree use $$sbl ast <sbl code>; To compile and add an alias use $$sbl alias add/create/edit/addedit/upsert <sbl code>;" -> set local "helptext"
+
+	# Unknown command
+	get compiled
+		get local "helptext" -> say "Unknown command! "
+	end -> set local "unknown-subcommand"
+
+	# No command
+	get compiled
+		get local "helptext" -> say "No command provided! "
+	end -> set local "no-command"
+
+	# compile the alias then run the $alias command
+	get compiled
+		get local "userinput" -> js import "dc9270caa4310b309f89a928c58d3506" ```
+			let alias_command = args[0]
+			let sbl_code = args.slice(1).join(" ")
+			let compiled = sbl.Compile(new sbl.Parser("aliasxd.sbl", sbl_code).getAST())
+			// slice 2 to remove "$alias addedit"
+			return alias_command+" "+compiled.split(" ").slice(2).join(" ")
+		``` -> exec "alias"
+	end -> set local "alias-proxy"
+
+	${0+} -> js ```
+		setLocal("userinput", args.slice(1).join(" "))
+		if (args.length === 0) return getLocal("no-command")
+		switch (args[0]) {
+			case "compile":
+				return getLocal("compile")
+			break;
+			case "ast":
+				return getLocal("dump-ast")
+			break;
+			case "alias":
+				// valid commands: add create edit addedit upsert
+				if (["add", "create", "edit", "addedit", "upsert"].includes(args[1]))
+					return getLocal("alias-proxy")
+				else {
+					return 'null | abb ac 0 a em:\"Only \'add\', \'create\', \'edit\', \'addedit\', and \'upsert\' are supported for $$sbl alias"'
+				}
+			default:
+				return getLocal("unknown-subcommand")
+			break;
+		}
+	``` -> exec "pipe"
+end
