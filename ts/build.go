@@ -22,6 +22,10 @@ func main() {
 			Infile:  "./ts/exports/compiler.ts",
 			Outfile: "./build/compiler.js",
 		},
+		{
+			Infile:  "./ts/exports/compilerAndParser.ts",
+			Outfile: "./build/compilerAndParser.js",
+		},
 	}
 	for _, s := range specs {
 		generateFile(s)
