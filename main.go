@@ -17,12 +17,18 @@ import (
 )
 
 type AliasOptions struct {
-	Aliasname          string
-	Keyprefix          string
-	ForcePipeCommand   bool
-	JSForceErrorInfo   bool
+	// Name of the alias for this scope
+	Aliasname string
+	// Key prefix used for this scope
+	Keyprefix string
+	// Force AliasBody to output $pipe command for this scope
+	ForcePipeCommand bool
+	// Force all instances of $js to use errorInfo:true for this scope
+	JSForceErrorInfo bool
+	// Disallow argument literals (${0+}, etc) for this scope
 	DisallowArgLiteral bool
-	MinifyJS           bool
+	// Minify javascript for this scope (will still be preprocessed, but not minified)
+	MinifyJS bool
 }
 
 func (a AliasOptions) Copy() *AliasOptions {
@@ -42,46 +48,99 @@ func (a *Alias) Getoptions() *AliasOptions {
 	}
 }
 
+type Commands struct {
+	aliasCommands []string
+	// tempKeys is an array of keys that will be unset after the alias has finished
+	tempKeys []string
+}
+
+// appends c2 to the end of c1
+func (c1 *Commands) append(c2 *Commands) {
+	c1.aliasCommands = append(c1.aliasCommands, c2.aliasCommands...)
+	c1.tempKeys = append(c1.tempKeys, c2.tempKeys...)
+}
+
+// Add a single command to the commands
+func (c *Commands) add(commandString string) {
+	c.aliasCommands = append(c.aliasCommands, commandString)
+}
+
+type CompiledAliasBody struct {
+	// alias txt
+	bodyText string
+	// keys to be unset at the end of alias execution (that havent already been unset)
+	tempKeys []string
+}
+
 // Compile the alias
 func (a *Alias) Compile() (string, error) {
 	out, err := a.Body.Compile(a.Getoptions())
 	if err != nil {
 		return "", fmt.Errorf("Alias: %w", err)
 	}
-	return "$alias addedit " + a.Name + " " + out, nil
+	if len(out.tempKeys) > 0 {
+		return "", fmt.Errorf("uncleared tempKeys: %v", out.tempKeys)
+	}
+	return "$alias addedit " + a.Name + " " + out.bodyText, nil
 }
 
 // eg. "|123|" or "|"
 var pipechar = regexp.MustCompile(`\|(\d+)\||\|`)
 
-func (ab *AliasBody) Compile(a *AliasOptions) (string, error) {
+func (ab *AliasBody) Compile(a *AliasOptions) (*CompiledAliasBody, error) {
 	// Commands are strings to be piped together
 	commands := []string{}
+	// keys to be removed after the alias finishes (completely)
+	tempKeys := []string{}
 	if len(ab.Actions) == 0 {
-		return "", errors.New("an alias must have at least one action")
+		return nil, errors.New("an alias must have at least one action")
 	}
 
 	// compile actions, adding null command between them
 	for i, aa := range ab.Actions {
 		cmds, err := aa.Compile(a)
 		if err != nil {
-			return "", fmt.Errorf("AliasBody: %w", err)
+			return nil, fmt.Errorf("AliasBody: %w", err)
 		}
-		commands = append(commands, cmds...)
-		if i+1 != len(ab.Actions) && len(cmds) > 0 {
+		commands = append(commands, cmds.aliasCommands...)
+		tempKeys = append(tempKeys, cmds.tempKeys...)
+		if i+1 != len(ab.Actions) && len(cmds.aliasCommands) > 0 {
 			commands = append(commands, "abb say", "null")
 		}
 	}
 
+	// TODO: Nothing is stopping "recused" alias bodies from resolving these
+	// they should only be "removed" by the root alias body
+	if len(tempKeys) > 0 {
+		deleteKeysJS := "let k = ["
+		for i, key := range tempKeys {
+			escapedKey := strings.ReplaceAll(key, `"`, `\\"`)
+			deleteKeysJS += `\"` + escapedKey + `\"`
+			if i+1 != len(tempKeys) {
+				deleteKeysJS += ","
+			}
+		}
+		deleteKeysJS += `];for(let i=0;i<k.length;i++)customData.set(k[i],undefined);`
+		// args.join(' ') must be last   // TODO: Some way to passthrough text without removing params
+		deleteKeysJS += "args.join(' ');"
+		errInfo := ""
+		if a.JSForceErrorInfo {
+			errInfo = "errorInfo:true "
+		}
+		deleteKeysCommand := `js ` + errInfo + `function:"` + deleteKeysJS + `"`
+		commands = append(commands, deleteKeysCommand)
+		tempKeys = nil
+	}
+
 	if len(commands) == 0 {
-		return "", errors.New("an alias must be equivelent to at least one command (your alias does nothing!)")
+		return nil, errors.New("an alias must be equivelent to at least one command (your alias does nothing!)")
 	}
 
 	// used in "get compiled", must output a string ready to be input to $pipe no matter what
 	if a.ForcePipeCommand && len(commands) == 1 {
 		commands = append([]string{"null"}, commands...)
 	} else if len(commands) == 1 {
-		return commands[0], nil
+		return &CompiledAliasBody{commands[0], tempKeys}, nil
 	}
 
 	uniqueUsedPipeNums := make(map[int]bool)
@@ -95,7 +154,7 @@ func (ab *AliasBody) Compile(a *AliasOptions) (string, error) {
 		} else {
 			numInChar, err := strconv.Atoi(v[1 : len(v)-1])
 			if err != nil {
-				return "", fmt.Errorf("parse int in pipe char: %w", err)
+				return nil, fmt.Errorf("parse int in pipe char: %w", err)
 			}
 			uniqueUsedPipeNums[numInChar] = true
 		}
@@ -125,22 +184,22 @@ func (ab *AliasBody) Compile(a *AliasOptions) (string, error) {
 		}
 		pipeChar = "|" + fmt.Sprint(num) + "|"
 	}
-	return "pipe _char:" + pipeChar + " " + strings.Join(commands, " "+pipeChar+" "), nil
+	return &CompiledAliasBody{"pipe _char:" + pipeChar + " " + strings.Join(commands, " "+pipeChar+" "), tempKeys}, nil
 }
-func (aa *AliasAction) Compile(a *AliasOptions) ([]string, error) {
-	out := []string{}
+func (aa *AliasAction) Compile(a *AliasOptions) (*Commands, error) {
+	out := &Commands{}
 	if aa.ExecuteAction != nil {
 		cmds, err := aa.ExecuteAction.Compile(a)
 		if err != nil {
 			return nil, fmt.Errorf("AliasAction: %w", err)
 		}
-		out = append(out, cmds...)
+		out.append(cmds)
 	} else if aa.GetCompiledAction != nil {
 		cmds, err := aa.GetCompiledAction.Compile(a)
 		if err != nil {
 			return nil, fmt.Errorf("AliasAction: %w", err)
 		}
-		out = append(out, cmds...)
+		out.append(cmds)
 	}
 	// if aa.ContinueAction != nil {
 	// 	cmds, err := aa.ContinueAction.Compile(a)
@@ -151,12 +210,15 @@ func (aa *AliasAction) Compile(a *AliasOptions) ([]string, error) {
 	// }
 	return out, nil
 }
-func (ca *GetCompiledAction) Compile(a *AliasOptions) (commands []string, err error) {
+func (ca *GetCompiledAction) Compile(a *AliasOptions) (commands *Commands, err error) {
+	commands = &Commands{}
 	if ca.CompilationRoot != nil {
 		aliasOpts := a.Copy()
 		aliasOpts.ForcePipeCommand = true
 		aliasOpts.DisallowArgLiteral = true
-		execString, err := ca.CompilationRoot.Compile(aliasOpts)
+		result, err := ca.CompilationRoot.Compile(aliasOpts)
+		commands.tempKeys = append(commands.tempKeys, result.tempKeys...)
+		execString := result.bodyText
 		if err != nil {
 			return nil, fmt.Errorf("GetCompiledAction: %w", err)
 		}
@@ -180,13 +242,17 @@ func (ca *GetCompiledAction) Compile(a *AliasOptions) (commands []string, err er
 			if ca.ContinueAction.StoreKeyLocal {
 				key = a.Keyprefix + key
 			}
+			if ca.ContinueAction.StoreKeyTemp {
+				commands.tempKeys = append(commands.tempKeys, key)
+			}
 
 			ca.ContinueAction.StoreKey = nil
 			ca.ContinueAction.StoreKeyLocal = false
+			ca.ContinueAction.StoreKeyTemp = false
 			escapedKey := strings.Replace(key, `"`, `\\"`, -1)
-			commands = append(commands, "js "+errInfo+"function:\" customData.set(\\\""+escapedKey+"\\\",'"+escapedString+"') \"")
+			commands.add("js " + errInfo + "function:\" customData.set(\\\"" + escapedKey + "\\\",'" + escapedString + "') \"")
 		} else {
-			commands = append(commands, "js "+errInfo+"function:\" '"+escapedString+"' \"")
+			commands.add("js " + errInfo + "function:\" '" + escapedString + "' \"")
 		}
 	}
 	if ca.ContinueAction != nil {
@@ -194,36 +260,37 @@ func (ca *GetCompiledAction) Compile(a *AliasOptions) (commands []string, err er
 		if err != nil {
 			return nil, fmt.Errorf("GetCompiledAction: %w", err)
 		}
-		commands = append(commands, cmds...)
+		commands.append(cmds)
 	}
 	return
 }
-func (ea *ExecuteAction) Compile(a *AliasOptions) ([]string, error) {
-	commands := []string{}
+func (ea *ExecuteAction) Compile(a *AliasOptions) (*Commands, error) {
+	commands := Commands{}
 	if ea.RetrieveAction != nil {
 		cmds, err := ea.RetrieveAction.Compile(a)
 		if err != nil {
 			return nil, fmt.Errorf("ExecuteAction: %w", err)
 		}
-		commands = append(commands, cmds...)
+		commands.append(cmds)
 	}
 	if ea.SimpleAction != nil {
-		out, err := ea.SimpleAction.Compile(a)
+		cmds, err := ea.SimpleAction.Compile(a)
 		if err != nil {
 			return nil, fmt.Errorf("ExecuteAction: %w", err)
 		}
-		commands = append(commands, out...)
+		commands.append(cmds)
 	}
 	if ea.ContinueAction != nil {
-		out, err := ea.ContinueAction.Compile(a)
+		cmds, err := ea.ContinueAction.Compile(a)
 		if err != nil {
 			return nil, fmt.Errorf("ExecuteAction: %w", err)
 		}
-		commands = append(commands, out...)
+		commands.append(cmds)
 	}
-	return commands, nil
+	return &commands, nil
 }
-func (ra *RetrieveAction) Compile(a *AliasOptions) (commands []string, err error) {
+func (ra *RetrieveAction) Compile(a *AliasOptions) (commands *Commands, err error) {
+	commands = &Commands{}
 	if ra.RetrieveKey != nil {
 		key := *ra.RetrieveKey
 		if ra.LocalRetrieveKey {
@@ -235,21 +302,27 @@ func (ra *RetrieveAction) Compile(a *AliasOptions) (commands []string, err error
 		if a.JSForceErrorInfo {
 			errInfo = "errorInfo:true "
 		}
-		commands = append(commands, `js `+errInfo+`function:"customData.get(\"`+escapedKey+`\")"`)
+		commands.add(`js ` + errInfo + `function:"customData.get(\"` + escapedKey + `\")"`)
 	} else if ra.RetrieveArgs != nil {
 		if a.DisallowArgLiteral {
 			// can be disabled because "get compiled" will mess with them, making them unreliable
 			return nil, participle.Errorf(ra.Pos, "arg literals are not allowed in this context")
 		}
-		commands = append(commands, `abb say `+*ra.RetrieveArgs)
+		commands.add(`abb say ` + *ra.RetrieveArgs)
 	}
 	return
 }
-func (ca *ContinuedAction) Compile(a *AliasOptions) (commands []string, err error) {
+func (ca *ContinuedAction) Compile(a *AliasOptions) (commands *Commands, err error) {
+	commands = &Commands{}
 	if ca.StoreKey != nil {
 		key := *ca.StoreKey
 		if ca.StoreKeyLocal {
 			key = a.Keyprefix + *ca.StoreKey
+		}
+		fmt.Printf("ca: %v\n", ca)
+		if ca.StoreKeyTemp {
+			fmt.Printf("key: %v\n", key)
+			commands.tempKeys = append(commands.tempKeys, key)
 		}
 
 		escapedKey := strings.Replace(key, `"`, `\\"`, -1)
@@ -257,51 +330,52 @@ func (ca *ContinuedAction) Compile(a *AliasOptions) (commands []string, err erro
 		if a.JSForceErrorInfo {
 			errInfo = "errorInfo:true "
 		}
-		commands = append(commands, `js `+errInfo+`function:"customData.set(\"`+escapedKey+`\", args.join(' '))"`)
+		commands.add(`js ` + errInfo + `function:"customData.set(\"` + escapedKey + `\", args.join(' '))"`)
 	} else if ca.NextAction != nil {
 		cmds, err := ca.NextAction.Compile(a)
 		if err != nil {
 			return nil, fmt.Errorf("ContinuedAction: %w", err)
 		}
-		commands = append(commands, cmds...)
+		commands.append(cmds)
 	}
 	if ca.SecondContinue != nil {
 		cmds, err := ca.SecondContinue.Compile(a)
 		if err != nil {
 			return nil, fmt.Errorf("ContinuedAction: %w", err)
 		}
-		commands = append(commands, cmds...)
+		commands.append(cmds)
 	}
 	return
 }
-func (ea *ExecuteActionSimple) Compile(a *AliasOptions) ([]string, error) {
-	out := []string{}
+func (ea *ExecuteActionSimple) Compile(a *AliasOptions) (*Commands, error) {
+	out := &Commands{}
 	if ea.JSExec != nil {
 		cmds, err := ea.JSExec.Compile(a)
 		if err != nil {
 			return nil, fmt.Errorf("ExecuteActionSimple: %w", err)
 		}
-		out = append(out, cmds...)
+		out.append(cmds)
 	} else if ea.PipeCommandLiterals != nil {
-		out = append(out, ea.PipeCommandLiterals...)
+		out.aliasCommands = append(out.aliasCommands, ea.PipeCommandLiterals...)
 	} else if ea.CallAlias != nil {
-		code, err := ea.CallAlias.Compile(a)
+		cmds, err := ea.CallAlias.Compile(a)
 		if err != nil {
 			return nil, fmt.Errorf("ExecuteActionSimple: %w", err)
 		}
-		out = append(out, code...)
+		out.append(cmds)
 	} else if ea.UseSayLiteral {
 		// since say will just output its input, we can optimize it out
 		// as long as you dont append any text
 		if ea.SayLiteral != nil {
-			out = append(out, "abb say "+*ea.SayLiteral)
+			out.add("abb say " + *ea.SayLiteral)
 		}
 	} else {
 		return nil, errors.New("invalid ExecuteActionSimple")
 	}
 	return out, nil
 }
-func (jsa *JSExecAction) Compile(a *AliasOptions) ([]string, error) {
+func (jsa *JSExecAction) Compile(a *AliasOptions) (commands *Commands, err error) {
+	commands = &Commands{}
 	// Unescape backtics from our parsing
 	unescapedJSCode := strings.Replace(jsa.ExecString.RawString, "\\`", "`", -1)
 
@@ -402,14 +476,18 @@ func (jsa *JSExecAction) Compile(a *AliasOptions) ([]string, error) {
 		}
 		importGist = "importGist:" + *jsa.ImportedGist + " "
 	}
-	return []string{"js " + errInfo + importGist + "function:\"" + escapedMinifiedCode + "\""}, nil
+	commands = &Commands{}
+	commands.add("js " + errInfo + importGist + "function:\"" + escapedMinifiedCode + "\"")
+	return commands, nil
 }
-func (ca *CallAliasAction) Compile(a *AliasOptions) ([]string, error) {
+func (ca *CallAliasAction) Compile(a *AliasOptions) (commands *Commands, err error) {
+	commands = &Commands{}
 	if ca.User != nil {
-		return []string{`alias try ` + *ca.User + ` ` + ca.AliasName}, nil
+		commands.add(`alias try ` + *ca.User + ` ` + ca.AliasName)
 	} else {
-		return []string{`$ ` + ca.AliasName}, nil
+		commands.add(`$ ` + ca.AliasName)
 	}
+	return
 }
 
 var processToken = func(trimleft, quotesize int, unquote bool, types ...string) func(p *participle.Parser) error {

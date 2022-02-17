@@ -45,7 +45,8 @@ type RetrieveAction struct {
 }
 
 type ContinuedAction struct {
-	StoreKeyLocal  bool                 `  "set" [ @"local" ]`
+	StoreKeyTemp   bool                 `   "set" [ @"temp" ]`
+	StoreKeyLocal  bool                 `   [ @"local" ]`
 	StoreKey       *string              `   @String`
 	NextAction     *ExecuteActionSimple `|  @@`
 	SecondContinue *ContinuedAction     `[ "->" @@ ]`

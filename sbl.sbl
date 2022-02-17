@@ -11,7 +11,7 @@ alias sbl prefixed "sbl-alias-"
 			setLocal("message-prefix", "Compiled alias: ")
 			return getLocal("post-message")
 		``` -> exec "pipe"
-	end -> set local temp "compile"
+	end -> set temp local "compile"
 
 	# Post a message to chat - if it overflows use hastebin
 	get compiled
@@ -22,21 +22,21 @@ alias sbl prefixed "sbl-alias-"
 			}
 			return getLocal("post-message-raw")
 		``` -> exec "pipe"
-	end -> set local "post-message"
+	end -> set temp local "post-message"
 
 	# Post message as a string
 	get compiled
 		js ```
 			return getLocal("message-prefix") +" "+ getLocal("message")
 		```
-	end -> set local "post-message-raw"
+	end -> set temp local "post-message-raw"
 
 	# Post message to hastebin
 	get compiled
 		get local "message" -> exec "hbp" -> js ```
 			return getLocal("message-prefix") +" "+ args.join(" ")
 		```
-	end -> set local "post-message-hastebin"
+	end -> set temp local "post-message-hastebin"
 
 	# Dump input parsed into an AST
 	get compiled
@@ -44,20 +44,20 @@ alias sbl prefixed "sbl-alias-"
 			let ast = new sbl.Parser("ast.sbl", getLocal("userinput")).getAST()
 			return JSON.stringify(ast, null, "\t")
 		``` -> exec "hbp" -> say "AST for your input: "
-	end -> set local "dump-ast"
+	end -> set temp local "dump-ast"
 
 	# Set the help text
-	say "To compile an alias use $$sbl compile <sbl code>; To dump an alias' Abstract Syntax Tree use $$sbl ast <sbl code>; To compile and add an alias use $$sbl alias add/create/edit/addedit/upsert <sbl code>;" -> set local "helptext"
+	say "To compile an alias use $$sbl compile <sbl code>; To dump an alias' Abstract Syntax Tree use $$sbl ast <sbl code>; To compile and add an alias use $$sbl alias add/create/edit/addedit/upsert <sbl code>;" -> set temp local "helptext"
 
 	# Unknown command
 	get compiled
 		get local "helptext" -> say "Unknown command! "
-	end -> set local "unknown-subcommand"
+	end -> set temp local "unknown-subcommand"
 
 	# No command
 	get compiled
 		get local "helptext" -> say "No command provided! "
-	end -> set local "no-command"
+	end -> set temp local "no-command"
 
 	# compile the alias then run the $alias command
 	get compiled
@@ -68,7 +68,7 @@ alias sbl prefixed "sbl-alias-"
 			// slice 2 to remove "$alias addedit"
 			return alias_command+" "+compiled.split(" ").slice(2).join(" ")
 		``` -> exec "alias"
-	end -> set local "alias-proxy"
+	end -> set temp local "alias-proxy"
 
 	${0+} -> js ```
 		setLocal("userinput", args.slice(1).join(" "))
