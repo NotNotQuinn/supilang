@@ -55,6 +55,7 @@ export enum TokenType {
 
 const TokenRegexes: { [key in keyof typeof TokenType]: RegExp }  = {
 	// Tokens are prioritized in this order
+	// TODO: add "temp" keyword (when implementing temp keys)
 	Keyword: new RegExp("^(\\b(alias|import|local|end|exec|pipe|prefixed|js|say|get|set|compiled|call|say|entry)\\b|\\||->)"),
 	Ident: new RegExp("^([-a-zA-Z_0-9]{2,30})"),
 	User: new RegExp("^(@[-a-zA-Z_0-9]+)"),

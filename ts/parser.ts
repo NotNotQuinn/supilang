@@ -283,6 +283,7 @@ export class Parser {
 		let ret: Partial<ContinuedAction> = { Pos: this.tok().pos }
 
 		if (this.scanKeyword("set")) {
+			// TODO: Add "temp" keyword (when implementing temp keys)
 			if (this.scanKeyword("local")) {
 				ret.StoreKeyLocal = true
 			}

@@ -241,6 +241,8 @@ function CompileContinuedAction(ca: ContinuedAction, a: AliasOptions): string[] 
 		if (ca.StoreKeyLocal) {
 			key = a.Keyprefix+key
 		}
+		// TODO: Check if store key is "temp" and add it to a seperate list of temp keys to be removed
+		// after the alias ends (requires refactoring the return type from string[] to a custom type)
 
 		let escapedKey = key.replace(/"/g, `\\\\"`) 
 		let errInfo = ""
