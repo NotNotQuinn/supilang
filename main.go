@@ -180,6 +180,10 @@ func (ab *AliasBody) Compile(a *AliasOptions) (*CompiledAliasBody, error) {
 			if v != i-1 {
 				num = usedPipeNums[i-1] + 1
 				break
+			} else if i == len(usedPipeNums)-1 {
+				// nothing is missing, so increase by one
+				num = v + 1
+				break
 			}
 		}
 		pipeChar = "|" + fmt.Sprint(num) + "|"
