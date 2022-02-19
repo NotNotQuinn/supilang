@@ -113,6 +113,9 @@ function CompileAliasBody(ab: AliasBody, a: AliasOptions) {
 			if (v !== i-1) {
 				num = usedPipeNums[i-1] + 1
 				break
+			} else if (i == usedPipeNums.length-1) {
+				num = v + 1
+				break
 			}
 		}
 		pipeChar = "|" + num + "|"
