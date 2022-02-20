@@ -29,6 +29,8 @@ type AliasOptions struct {
 	DisallowArgLiteral bool
 	// Minify javascript for this scope (will still be preprocessed, but not minified)
 	MinifyJS bool
+	// Do not remove temporary keys
+	KeepTempkeys bool
 }
 
 func (a AliasOptions) Copy() *AliasOptions {
@@ -41,10 +43,13 @@ func (a *Alias) Getoptions() *AliasOptions {
 		keyprefix = *a.Keyprefix
 	}
 	return &AliasOptions{
-		Aliasname:        a.Name,
-		Keyprefix:        keyprefix,
-		JSForceErrorInfo: true,
-		MinifyJS:         true,
+		Aliasname:          a.Name,
+		Keyprefix:          keyprefix,
+		ForcePipeCommand:   false,
+		JSForceErrorInfo:   true,
+		DisallowArgLiteral: false,
+		MinifyJS:           true,
+		KeepTempkeys:       true,
 	}
 }
 
@@ -109,8 +114,11 @@ func (ab *AliasBody) Compile(a *AliasOptions) (*CompiledAliasBody, error) {
 		}
 	}
 
-	// TODO: Nothing is stopping "recused" alias bodies from resolving these
+	// TODO: Nothing is stopping "recursed" alias bodies from resolving these
 	// they should only be "removed" by the root alias body
+	if a.KeepTempkeys {
+		tempKeys = nil
+	}
 	if len(tempKeys) > 0 {
 		deleteKeysJS := "let k = ["
 		for i, key := range tempKeys {
@@ -188,7 +196,7 @@ func (ab *AliasBody) Compile(a *AliasOptions) (*CompiledAliasBody, error) {
 		}
 		pipeChar = "|" + fmt.Sprint(num) + "|"
 	}
-	return &CompiledAliasBody{"pipe _char:" + pipeChar + " " + strings.Join(commands, " "+pipeChar+" "), tempKeys}, nil
+	return &CompiledAliasBody{"pipe _char:" + pipeChar + " " + strings.Join(commands, pipeChar), tempKeys}, nil
 }
 func (aa *AliasAction) Compile(a *AliasOptions) (*Commands, error) {
 	out := &Commands{}
