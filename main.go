@@ -229,6 +229,9 @@ func (ca *GetCompiledAction) Compile(a *AliasOptions) (commands *Commands, err e
 		aliasOpts.ForcePipeCommand = true
 		aliasOpts.DisallowArgLiteral = true
 		result, err := ca.CompilationRoot.Compile(aliasOpts)
+		if err != nil {
+			return nil, err
+		}
 		commands.tempKeys = append(commands.tempKeys, result.tempKeys...)
 		execString := result.bodyText
 		if err != nil {
@@ -388,11 +391,12 @@ func (ea *ExecuteActionSimple) Compile(a *AliasOptions) (*Commands, error) {
 }
 func (jsa *JSExecAction) Compile(a *AliasOptions) (commands *Commands, err error) {
 	commands = &Commands{}
-	// Unescape backtics from our parsing
+	// Calculate injected Javascript
 	unescapedJSCode := strings.Replace(jsa.ExecString.RawString, "\\`", "`", -1)
 
 	escapedKeyprefix := strings.Replace(a.Keyprefix, `"`, `\"`, -1)
 	escapedKeyprefix = strings.Replace(escapedKeyprefix, "\n", "\\n", -1)
+	// runtime functions to interact with local keys
 	injectedRuntime := `
 		// get the local value for the key
 		function getLocal(key) {
@@ -406,10 +410,21 @@ func (jsa *JSExecAction) Compile(a *AliasOptions) (commands *Commands, err error
 		function getLocalPrefix() {
 			return "` + escapedKeyprefix + `"
 		}
-	` + `;`
-
+`
+	// injected gists
+	injectedGistsContent := []string{}
+	for _, id := range jsa.InjectedGists {
+		content, err := getGistContent(id)
+		if err != nil {
+			return nil, participle.Errorf(jsa.Pos, "get gist content: %s", err.Error())
+		}
+		injectedGistsContent = append(injectedGistsContent, content)
+	}
+	injectedGistJS := strings.Join(injectedGistsContent, "\n\n")
+	// Final injected code
+	injectedCode := injectedGistJS + "\n\n" + injectedRuntime + "\n\n"
 	// Minify code so that it can fit on one line, because I'm not parsing that shit
-	res := esbuild.Transform(injectedRuntime+unescapedJSCode, esbuild.TransformOptions{
+	res := esbuild.Transform(injectedCode+unescapedJSCode, esbuild.TransformOptions{
 		Loader:            esbuild.LoaderJS,
 		Drop:              esbuild.DropConsole, // console doesnt even exist in $js
 		IgnoreAnnotations: true,
@@ -426,7 +441,7 @@ func (jsa *JSExecAction) Compile(a *AliasOptions) (commands *Commands, err error
 			// calculate the actual locaiton of l2 in our source file
 			// based on where the js token started
 			var loc lexer.Position
-			injectedLines := strings.Split(injectedRuntime, "\n")
+			injectedLines := strings.Split(injectedCode, "\n")
 			// If its the first line of where the user wrote....
 			if l2.Line-len(injectedLines)+1 == 1 {
 				lenLastInjectedLine := len(injectedLines[len(injectedLines)-1])
