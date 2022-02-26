@@ -1,0 +1,256 @@
+# Supibot Debugger
+
+# Run supibot aliases one command at a time
+
+# Key naming conventions
+# - establish a prefix
+# - "<name>()" for executable strings
+
+# It might be a good idea to set executable strings, and
+# invocation data as "temp" so they get unset after the alias runs
+# Making it harder to reach the limit for customData
+# especially executable strings, as they may be quite lengthy
+
+# Commands
+
+# Currently relies on $$force and $$realtext
+# Which both can only be executed inside an alias (because of scoping, and duplicating text using argument literals)
+
+alias sdb prefixed "sdb-"
+
+	get compiled # start()
+		js import "3016289a81943e3c07160080a94569f1" ```
+			if (getLocal("alias-definition") == "(empty message)")
+				throw new Error("Expected alias name, found nothing.")
+		```
+
+		# calculate "real" alias definition
+		get local "alias-definition" -> pipe
+			"alias code"
+			| "abb tee"
+		get local "alias-definition" -> pipe
+			"alias code"
+			# setup for calculating definition is
+			#   1. one version that has been filtered through $abb inside at the top of `tee`
+			#   2. one version filtered through $js as arguments to where you calcuate it
+			-> js import "d2a7d308c6686e1e881f7f6fdbff9113"
+				``` setLocal('alias-definition', calculateAliasDefinition()); ```
+
+		# cc5c3bb55a1eaf3a366c8edd219c4da2 is newSessionFromPipeInput(pipeInput: string)
+		# 3016289a81943e3c07160080a94569f1 is stack functions
+		js import "cc5c3bb55a1eaf3a366c8edd219c4da2" inject "3016289a81943e3c07160080a94569f1" ```
+			let commandArgs = getLocal("alias-definition")?.split(" ") || []
+			stackDelete(getLocalPrefix()+"executions")
+			let sessions = getLocalPrefix()+"session"
+			let sessionCount = stackCount(sessions)
+			if (sessionCount > 0) {
+				throw new Error("cannot create a session: end the current session to create a new one")
+			}
+			if (commandArgs[0] == "pipe") {
+				let input = commandArgs.slice(1).join(" ")
+				let session = newSessionFromPipeInput(input)
+				session.isAlias = true
+				session.aliasInput = (getLocal("userinput")?.split(" ") || []).slice(2).join(" ")
+				stackPush(sessions, JSON.stringify(session))
+				return "Created session"
+			} else {
+				return "Session not created - only aliases that use $pipe are supported"
+			}
+		```
+	end -> set temp local "start()"
+
+#	return {
+#		// commands to invoke
+#		invocations,
+#		// if true, will replace alias text with the text input to the session
+#		isAlias: false,
+#		// text to use when replacing alias values
+#		aliasInput: null,
+#		// if true, actually I dont know what this is for
+#		isPipe: true,
+#		// force execution?
+#		force: params._force ?? false,
+#		// current invocation index in invocations
+#		currentInvocation: 0,
+#		// output of each command invocation
+#		resultHistory: [],
+#		// // TODO: Add tee content
+#		// tee: [],
+#	}
+
+	get compiled # step-single()
+		# cc5c3bb55a1eaf3a366c8edd219c4da2 is newSessionFromPipeInput(pipeInput: string)
+		# 3016289a81943e3c07160080a94569f1 is stack functions
+		js import "cc5c3bb55a1eaf3a366c8edd219c4da2"
+		   inject "3016289a81943e3c07160080a94569f1" ```
+			let sessionStack = getLocalPrefix()+"session"
+			if (stackCount(sessionStack) <= 0) return "null | abb say Cannot step execution outside a session!"
+
+			let session = JSON.parse(stackTop(sessionStack))
+			// pops all finished sessions, recursively (except the last one)
+			function popFinishedSessions() {
+				if (session.currentInvocation >= session.invocations.length && stackCount(sessionStack) > 1) {
+					let result = session.resultHistory[session.resultHistory.length-1]
+					stackPop(sessionStack)  // pop current session
+					session = JSON.parse(stackPop(sessionStack))  // get the parent session
+					session.resultHistory.push(result);
+					stackPush(sessionStack, JSON.stringify(session))
+					if (stackCount(sessionStack) <= 1) return
+					popFinishedSessions()
+				}
+			}
+			popFinishedSessions()
+			if (session.currentInvocation >= session.invocations.length && stackCount(sessionStack) <= 1) {
+				
+				return "null | abb say Done: " + session.resultHistory[session.resultHistory.length-1]
+			}
+			let command = session.invocations[session.currentInvocation]
+			let input = session.currentInvocation <= 0
+				? null
+				: (session.resultHistory[session.currentInvocation-1] || null)
+
+			// do a similar sort of looping for these
+			// if command is pipe.......
+			if ((command?.split(" ") || [])[0] == "pipe") {
+				do {
+					// mark the parent session as currently evaluating
+					session.currentInvocation += 1;
+					stackPop(sessionStack)
+					stackPush(sessionStack, JSON.stringify(session))
+					// new session?? bruh
+					let pipeInput = (command?.split(" ") || []).slice(1).join(" ") + " " + input
+					let newSession = newSessionFromPipeInput(pipeInput)
+					stackPush(getLocalPrefix()+"executions", "pipe " + pipeInput)
+					stackPush(sessionStack, JSON.stringify(newSession))
+					// reload session
+					session = JSON.parse(stackTop(sessionStack))
+					command = session.invocations[session.currentInvocation]
+					input = session.currentInvocation <= 0
+						? null
+						: (session.resultHistory[session.currentInvocation-1] || null)
+				} while ((command?.split(" ") || [])[0] == "pipe")
+			}
+				// if command is alias.......
+					// new session again
+					// bruuuuuuuuuuuuuuuuuuu
+					// resolve alias through $alias code
+					// optionally you can also resolve the aliases at session creation
+					// (requires looping actual supibot commands, which I think will get dank)
+			setLocal("emulation-command", command)
+			setLocal("emulation-input", input)
+			setLocal("emulation-force", session.force)
+			// do we replace these "${0+}"?
+			setLocal("emulation-replaceAliasText", session.isAlias)
+			// this is the text to use when replacing these "${0+}"
+			setLocal("emulation-aliasInput", session.isAlias ? session.aliasInput : null)
+			return getLocal("emulate-command()")
+		``` -> exec "pipe"
+	end -> set temp local "step-single()"
+
+	get compiled # emulate-command()
+		# 3016289a81943e3c07160080a94569f1 is stack functions
+		# 147bb66571bd70f9c2192b05f5f7dd5d is applyParameters(commandArgs, aliasArgs)
+		js import "3016289a81943e3c07160080a94569f1" inject "147bb66571bd70f9c2192b05f5f7dd5d" ```
+			function baduuid() {
+				return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'
+					.replace(/[xy]/g, function(c) {
+							var r = Math.random() * 16 | 0
+							  , v = c == 'x' ? r : (r & 0x3 | 0x8); 
+							return v.toString(16);
+						});
+			}
+			// construct a pipe...!
+			// wait this might be easier than i thought
+			let pipeChar = baduuid()
+			let getInput = ""
+			let force = ""
+			let command = getLocal("emulation-command")
+			if (getLocal("emulation-force")) {
+				force = "$ force "
+			}
+			if (getLocal("emulation-replaceAliasText")) {
+				// TODO: this should be replaced before the pipe is parsed, to emulate supibot properly
+				const WHITESPACE_REGEX = new RegExp("[\u034f\u2800\u{E0000}\u180e\ufeff\u2000-\u200d\u206D]", "gu")
+				let commandArgs = command.split(" ")
+					.map(i => i.replace(WHITESPACE_REGEX, ""))
+					.filter(Boolean);
+				let aliasArgs = (getLocal("emulation-aliasInput")?.split(" ") || [])
+					.map(i => i.replace(WHITESPACE_REGEX, ""))
+					.filter(Boolean);
+				let { success, reply, resultArguments } = applyParameters(commandArgs, aliasArgs)
+				stackPush("debug", JSON.stringify({ success, reply, resultArguments, commandArgs, aliasArgs }))
+				if (success) {
+					command = resultArguments.join(" ");
+				} else {
+					throw new Error(reply)
+				}
+			}
+			if (typeof getLocal("emulation-input") !== "undefined" && getLocal("emulation-input") !== null) {
+				getInput = "js function:\"customData.get('"+getLocalPrefix().replace("\\", "\\\\").replace("\"", "\\\"").replace("'", "\\'")+"emulation-input')\" "+pipeChar+" "
+			}
+			stackPush(getLocalPrefix()+"executions", force+command)
+			let out = "_char:"+pipeChar+" "+getInput+" "+force+command+" "+pipeChar+" $ realtext "+pipeChar+" js function:\"customData.get('"+getLocalPrefix().replace("\\", "\\\\").replace("\"", "\\\"").replace("'", "\\'")+"post-emulation-tasks()')\" "+pipeChar+" pipe"
+			return out
+		``` -> exec "pipe"
+	end -> set temp local "emulate-command()"
+
+	get compiled # post-emulation-tasks()
+		js import "3016289a81943e3c07160080a94569f1" ```
+			let sessionStack = getLocalPrefix()+"session"
+			let session = JSON.parse(stackPop(sessionStack))
+			// realtext preserves parameters inside text
+			let result = customData.get("realtext")
+			session.resultHistory.push(result)
+			session.currentInvocation++;
+			stackPush(sessionStack, JSON.stringify(session))
+			let command = stackTop(getLocalPrefix()+"executions")
+			return "Executed \""+command+"\"; Output: " + result
+		```
+	end -> set temp local "post-emulation-tasks()"
+
+	get compiled # quit-session()
+		js import "3016289a81943e3c07160080a94569f1" ```
+			let sessionStack = getLocalPrefix()+"session"
+			if (stackCount(sessionStack) <= 0) return "Not inside a session - no changes made."
+			stackDelete(sessionStack)
+			return "Deleted current session."
+		```
+	end -> set temp local "quit-session()"
+
+	get compiled # unknown-command()
+		get local "helptext" -> say "Unknown command: "
+	end -> set temp local "unknown-command()"
+
+	# To calculate "real" alias definition
+	# Could be set to "(empty message)" if not provided
+	${1} -> say -> set temp local "alias-definition" # mark as temp - and store alias name temporarily
+	# Set help text
+	say "Help info coming soon Keepo" -> set temp local  
+	# Entrypoint
+	${0+} -> js import "3016289a81943e3c07160080a94569f1" ```
+		let commandArgs = args
+		setLocal("userinput", args.join(" "));
+		switch (commandArgs[0]) {
+			case 'start': // $$sdb start <alias> <input...>
+				// start a session
+				// create session data
+				return getLocal("start()")
+			break;
+			case 'quit':
+				// quit a session
+				// destroy session data
+				return getLocal("quit-session()")
+			break;
+			case 'step':
+				// step one command
+				return getLocal("step-single()")
+			break;
+			case 'help':
+				return "null | abb say " + getLocal("helptext")
+			break;
+			default:
+				return getLocal("unknown-command()")
+			break;
+		}
+	``` -> exec "pipe"
+end
